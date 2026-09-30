@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import ThemeToggle from "@/components/theme-toggle";
+import { THEME_BOOTSTRAP } from "@/lib/theme";
 export const metadata: Metadata = {
   title: "PayAdmin · Tu tranquilidad, en números",
   description:
@@ -12,12 +14,21 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#174e43",
+  themeColor: "#0f1714",
 };
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es">
-      <body>{children}</body>
+    <html lang="es" data-theme="dark" suppressHydrationWarning>
+      <head>
+        <script
+          id="payadmin-theme"
+          dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }}
+        />
+      </head>
+      <body>
+        <ThemeToggle />
+        {children}
+      </body>
     </html>
   );
 }

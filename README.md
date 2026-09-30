@@ -6,9 +6,9 @@ Aplicación privada en español para Javier Alexander Carrión Moreno. Next.js 1
 
 ## Vista de la aplicación
 
-![Resumen de PayAdmin en escritorio](docs/prototype/desktop.png)
+![Resumen de PayAdmin en modo oscuro](docs/prototype/desktop-dark.png)
 
-[Vista móvil](docs/prototype/iphone.png) · [Formulario de movimientos](docs/prototype/formulario.png). Las capturas muestran la interfaz inicial, sin pagos registrados.
+[Vista móvil oscura](docs/prototype/iphone-dark.png) · [Formulario oscuro](docs/prototype/formulario-dark.png) · [Acceso oscuro](docs/prototype/login-dark.png) · [Vista clara](docs/prototype/desktop.png). Las capturas muestran la interfaz inicial, sin pagos registrados.
 
 ## Desarrollo
 
@@ -77,6 +77,8 @@ El Dockerfile compila sin credenciales de base de datos. La migración es transa
 
 ## Uso
 
+La aplicación abre en modo oscuro. El botón de sol o luna de la esquina superior derecha cambia entre oscuro y claro y conserva la elección en el navegador. Se aplica al resumen, tablas, gráficas, formularios, login y registro. La preferencia no guarda datos financieros.
+
 - **Resumen:** capital, pagos reales, progreso por capital y composición pendiente de las cuatro bolsas respecto al capital inicial BG.
 - **Movimientos:** pagos reales, aportes recibidos y caja en listas separadas. Vínculos de aporte a pago con importes explícitos, sin doble registro. Permite varios pagos quincenales y correcciones/anulaciones con motivo, versión y auditoría.
 - **Responsabilidades:** saldos, cargos pagados y pendientes, calendario interno mensual, plazos y composición. Los cargos CrediJamar financiados por Javier y sus compensaciones se ven en Movimientos.
@@ -133,5 +135,7 @@ Las capturas locales se generan con `scripts/capture-prototype.ts` usando una BD
 `DATABASE_URL` de la base `_test` y `TEST_BASE_URL` de un servidor que use esa misma base permiten ejecutar `npx tsx scripts/test-browser.ts`. Esa prueba verifica los formularios en Chromium, incluyendo pagos vinculados, corrección, extracto cero y presupuesto, y limpia/restaura su estado temporal al terminar. No la ejecutes sobre la base personal.
 
 `npx tsx scripts/test-registration.ts` verifica el registro inicial en escritorio y móvil, el código privado, la confirmación, el origen de la solicitud, el cierre del registro y el login. Requiere una base `_test` sin usuarios, `TEST_BASE_URL` y el mismo `INITIAL_SETUP_TOKEN` temporal en el servidor y la prueba. Elimina únicamente la cuenta temporal que crea. No utiliza la base personal.
+
+`npx tsx scripts/test-theme.ts` verifica ambos temas, contraste de texto, persistencia, sincronización entre pestañas, formularios y móvil. Usa una base aislada `_dev` o `_test` y `TEST_BASE_URL`; crea y elimina una cuenta temporal sin registrar pagos.
 
 La conexión remota, publicación, persistencia entre despliegues Railway y metodología contractual del banco se verificarán cuando estén disponibles. La validación local no afirma que esos pasos ya ocurrieron.

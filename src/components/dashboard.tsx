@@ -238,7 +238,8 @@ export default function Dashboard({
               <Menu size={22} />
             </button>
             <span className="breadcrumb">
-              Mi espacio <ChevronRight size={14} />
+              <span className="breadcrumb-origin">Mi espacio</span>{" "}
+              <ChevronRight size={14} />
               <strong>{title}</strong>
             </span>
           </div>
@@ -695,8 +696,12 @@ function BalanceChart({ f, opening }: { f: Forecast; opening: number }) {
       >
         <defs>
           <linearGradient id="balance-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#43836c" stopOpacity=".20" />
-            <stop offset="100%" stopColor="#43836c" stopOpacity=".015" />
+            <stop offset="0%" stopColor="var(--chart-line)" stopOpacity=".20" />
+            <stop
+              offset="100%"
+              stopColor="var(--chart-line)"
+              stopOpacity=".015"
+            />
           </linearGradient>
         </defs>
         {[0, 0.5, 1].map((t) => (
@@ -706,16 +711,21 @@ function BalanceChart({ f, opening }: { f: Forecast; opening: number }) {
               x2={w - 15}
               y1={12 + t * (h - 50)}
               y2={12 + t * (h - 50)}
-              stroke="#e9ece6"
+              stroke="var(--line)"
               strokeDasharray="4 5"
             />
-            <text x="0" y={16 + t * (h - 50)} fill="#8a928a" fontSize="11">
+            <text x="0" y={16 + t * (h - 50)} fill="var(--muted)" fontSize="11">
               ${Math.round(((1 - t) * opening) / 10000) / 10}k
             </text>
           </g>
         ))}
         <path d={area} fill="url(#balance-fill)" />
-        <path d={path} fill="none" stroke="#28725c" strokeWidth="2.6" />
+        <path
+          d={path}
+          fill="none"
+          stroke="var(--chart-line)"
+          strokeWidth="2.6"
+        />
         {[0, 0.25, 0.5, 0.75, 1].map((t) => {
           const i = Math.round(t * (f.schedule.length - 1));
           return (
@@ -724,7 +734,7 @@ function BalanceChart({ f, opening }: { f: Forecast; opening: number }) {
               x={pad + t * (w - pad - 15)}
               y={h - 9}
               textAnchor={t === 1 ? "end" : t === 0 ? "start" : "middle"}
-              fill="#8a928a"
+              fill="var(--muted)"
               fontSize="11"
             >
               {f.schedule[i]?.period || "—"}
