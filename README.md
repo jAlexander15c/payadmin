@@ -2,7 +2,7 @@
 
 Aplicación privada en español para Javier Alexander Carrión Moreno. Next.js 16, TypeScript, PostgreSQL y cálculos con `decimal.js`. Un préstamo legal BG, cuatro responsabilidades internas, aportes separados de pagos bancarios y presupuesto de caja. Moneda USD; fechas y presupuesto en `America/Panama`.
 
-**Estado:** aplicación y persistencia validadas con PostgreSQL local. La conexión a PostgreSQL de Railway, creación del acceso personal y publicación en Railway quedan pendientes, por decisión del propietario. No se necesita la base remota para compilar ni ejecutar las pruebas financieras. Sin conexión configurada, la portada indica el pendiente y no expone información privada.
+**Estado:** aplicación y persistencia validadas con PostgreSQL local. El propietario confirmó el despliegue de Railway en línea. No se necesita la base remota para compilar ni ejecutar las pruebas financieras. Sin conexión configurada, la portada indica el pendiente y no expone información privada.
 
 ## Vista de la aplicación
 
@@ -27,7 +27,19 @@ npm run dev
 
 ### Crear el acceso privado
 
-No existe registro público, contraseña predeterminada ni bypass de autenticación. Proporciona `ADMIN_EMAIL` y `ADMIN_PASSWORD` únicamente al comando de creación. La contraseña debe tener entre 14 y 256 caracteres. En una terminal Bash puedes introducirla sin mostrarla:
+Puedes crear tu primer usuario desde el navegador, sin instalar herramientas ni abrir una terminal:
+
+1. En Railway → servicio web PayAdmin → Variables, agrega `INITIAL_SETUP_TOKEN` con un código privado y aleatorio de 32 a 256 caracteres, sin espacios al principio o final. Elige tu propio valor; no uses ejemplos publicados ni lo compartas.
+2. Aplica los cambios y despliega. Abre `/login` y pulsa **Crear mi cuenta**, o entra directamente a `/registro`.
+3. Introduce ese código, tu correo y una contraseña nueva de 14 a 256 caracteres; confirma la contraseña. El código temporal es distinto de la contraseña de tu cuenta.
+4. Inicia sesión. El registro se cierra automáticamente en cuanto existe un usuario, aunque la variable siga configurada.
+5. Elimina `INITIAL_SETUP_TOKEN` de Railway y aplica los cambios. Tu cuenta sigue funcionando.
+
+El código solo se valida en el servidor y no se envía a las páginas. Los intentos fallidos se limitan a diez cada quince minutos; la creación es transaccional, impide dos primeras cuentas simultáneas y registra auditoría sin contraseñas ni códigos. Sin el código configurado, o si ya hay usuarios, esta ruta no permite registrar cuentas. No permite recuperar ni reemplazar una cuenta existente.
+
+[Formulario de registro](docs/prototype/registro.png) · [Registro en móvil](docs/prototype/registro-mobile.png).
+
+La terminal sigue disponible como alternativa. Proporciona `ADMIN_EMAIL` y `ADMIN_PASSWORD` únicamente al comando de creación. La contraseña debe tener entre 14 y 256 caracteres. En una terminal Bash puedes introducirla sin mostrarla:
 
 ```sh
 read -r -p 'Correo: ' ADMIN_EMAIL
@@ -49,15 +61,16 @@ El comando conserva usuarios existentes; no sobrescribe contraseñas. Elimina la
 | `DATABASE_SSL`                  | `disable` para conexiones privadas/locales que sirven PostgreSQL sin TLS; `verify` para TLS con verificación del certificado. Si la URL exige TLS y esta variable está ausente, se usa verificación. |
 | `DATABASE_CA_FILE`              | Ruta opcional al certificado CA del proveedor para TLS verificable. No se desactiva la verificación.                                                                                                 |
 | `PORT`                          | Railway lo inyecta; Next.js lo respeta. Localmente, 3000 por defecto.                                                                                                                                |
-| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Solo al crear el usuario; no hacen falta para ejecutar la aplicación.                                                                                                                                |
+| `INITIAL_SETUP_TOKEN`           | Código temporal privado, de 32 a 256 caracteres, para crear únicamente la primera cuenta desde `/registro`. Eliminarlo después de crearla.                                                           |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Solo al crear el usuario mediante terminal; no hacen falta para ejecutar la aplicación.                                                                                                              |
 
-## Railway: configuración pendiente
+## Railway: configuración
 
 1. Conecta este repositorio a un servicio Railway y añade un servicio PostgreSQL.
 2. En el servicio web configura `DATABASE_URL` como referencia a la conexión **privada** del servicio PostgreSQL. No copies credenciales al código. Si usas un endpoint TLS público, configura `DATABASE_SSL=verify` y la CA correspondiente.
 3. Genera el dominio del servicio web y configura `APP_URL` con su origen HTTPS. Establece `COOKIE_SECURE=true`.
 4. `railway.json` usa el Dockerfile, ejecuta `npm run db:migrate` antes del despliegue y arranca con `npm run start`. `/api/health` comprueba la base y el esquema; responde 503 hasta que estén disponibles. El healthcheck no revela datos financieros.
-5. Ejecuta una vez `npm run user:create` **en el entorno que tiene acceso a la base privada**, con las dos variables temporales. Una ejecución local de `railway run` puede no alcanzar el hostname privado: usa la consola/shell del servicio o un endpoint verificado accesible.
+5. Crea tu acceso desde `/registro` usando `INITIAL_SETUP_TOKEN`, siguiendo los pasos anteriores. Como alternativa, ejecuta una vez `npm run user:create` **en el entorno que tiene acceso a la base privada**, con las dos variables temporales. Una ejecución local de `railway run` puede no alcanzar el hostname privado: usa la consola/shell del servicio o un endpoint verificado accesible.
 6. Inicia sesión y confirma los cuadres iniciales, la fecha provisional y cero movimientos del préstamo nuevo. Habilita copias de seguridad de PostgreSQL en Railway.
 
 El Dockerfile compila sin credenciales de base de datos. La migración es transaccional, idempotente y protegida por un bloqueo para despliegues simultáneos. Incluye datos iniciales reales de la cotización, composición y el historial separado del préstamo anterior de Chunky. **No incluye pagos de prueba del préstamo nuevo.**
@@ -113,10 +126,12 @@ DATABASE_URL='conexión-de-la-base-test' npm run db:migrate
 DATABASE_URL='conexión-de-la-base-test' TEST_BASE_URL='origen-del-servidor-local' npm run test:integration
 ```
 
-Las pruebas financieras cubren cuadres, flujo fijo, compensación, límites, extras $200/$1,000/$500, pagos cero/parciales/quincenales, ceros confirmados, exceso, barras por capital y versiones futuras. La integración comprueba PostgreSQL NUMERIC, aportes no aplicados, concurrencia/idempotencia, vínculos, correcciones, anulaciones, extractos y rechazo de solicitudes sin autenticación o con origen ajeno.
+Las pruebas financieras cubren cuadres, flujo fijo, compensación, límites, extras $200/$1,000/$500, pagos cero/parciales/quincenales, ceros confirmados, exceso, barras por capital y versiones futuras. La integración comprueba PostgreSQL NUMERIC, aportes no aplicados, concurrencia/idempotencia, vínculos, correcciones, anulaciones, extractos y rechazo de solicitudes sin autenticación o con origen ajeno. También verifica registro inicial deshabilitado, código incorrecto, límite persistente de intentos, creación simultánea de una sola cuenta y cierre automático. Los archivos de integración se ejecutan en serie porque comparten la base test.
 
 Las capturas locales se generan con `scripts/capture-prototype.ts` usando una BD `_dev` o `_test`, Chromium instalado y el servidor local. Crea y elimina un usuario temporal; no registra pagos ni ofrece una ruta pública de demostración. Archivos en `.local/prototype/`.
 
 `DATABASE_URL` de la base `_test` y `TEST_BASE_URL` de un servidor que use esa misma base permiten ejecutar `npx tsx scripts/test-browser.ts`. Esa prueba verifica los formularios en Chromium, incluyendo pagos vinculados, corrección, extracto cero y presupuesto, y limpia/restaura su estado temporal al terminar. No la ejecutes sobre la base personal.
+
+`npx tsx scripts/test-registration.ts` verifica el registro inicial en escritorio y móvil, el código privado, la confirmación, el origen de la solicitud, el cierre del registro y el login. Requiere una base `_test` sin usuarios, `TEST_BASE_URL` y el mismo `INITIAL_SETUP_TOKEN` temporal en el servidor y la prueba. Elimina únicamente la cuenta temporal que crea. No utiliza la base personal.
 
 La conexión remota, publicación, persistencia entre despliegues Railway y metodología contractual del banco se verificarán cuando estén disponibles. La validación local no afirma que esos pasos ya ocurrieron.

@@ -1,7 +1,14 @@
 "use client";
 import { useState } from "react";
 import { ArrowRight, LockKeyhole } from "lucide-react";
-export default function Login() {
+import Link from "next/link";
+export default function Login({
+  registrationAvailable = false,
+  created = false,
+}: {
+  registrationAvailable?: boolean;
+  created?: boolean;
+}) {
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -54,6 +61,11 @@ export default function Login() {
         </span>
         <h2>Bienvenido a tu espacio</h2>
         <p>Inicia sesión para continuar con tu plan.</p>
+        {created && (
+          <div className="notice" role="status">
+            Tu cuenta fue creada. Ya puedes iniciar sesión.
+          </div>
+        )}
         <form onSubmit={submit}>
           <label>
             Correo electrónico
@@ -85,6 +97,11 @@ export default function Login() {
             <ArrowRight size={18} />
           </button>
         </form>
+        {registrationAvailable && (
+          <Link href="/registro" className="registration-link">
+            Crear mi cuenta
+          </Link>
+        )}
         <small className="private-note">
           <LockKeyhole size={13} /> Acceso privado · Sin registro público
         </small>

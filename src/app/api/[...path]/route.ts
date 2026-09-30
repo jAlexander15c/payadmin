@@ -15,6 +15,7 @@ import {
 import { period, simulationInput } from "@/lib/validation";
 import { budgetFor } from "@/lib/budget";
 import { cents, money, simulate } from "@/lib/finance";
+import { registerInitialUser } from "@/lib/initial-registration";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ path: string[] }> };
@@ -275,6 +276,8 @@ export async function POST(req: Request, ctx: Context) {
     checkOrigin(req);
     const path = (await ctx.params).path;
     const raw = await body(req);
+    if (path.join("/") === "initial-registration")
+      return response(await registerInitialUser(raw), 201);
     if (path.join("/") === "login") {
       const v = z
         .object({

@@ -1767,6 +1767,23 @@ input:disabled {
 .login-card .error {
   font-size: 11px;
 }
+.registration-link {
+  display: block;
+  margin-top: 22px;
+  text-align: center;
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 550;
+}
+.registration-card {
+  margin: 24px 0;
+}
+.field-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #718063;
+}
 @media (min-width: 1450px) {
   .content {
     padding-left: 50px;
