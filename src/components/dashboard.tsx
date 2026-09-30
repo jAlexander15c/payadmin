@@ -82,7 +82,7 @@ function expectedCredi(d: Snapshot) {
 }
 export const typeNames: Record<string, string> = {
   REGULAR: "Pago regular BG",
-  CREDI: "Cuota adicional CrediJamar",
+  CREDI: "Abono voluntario CrediJamar",
   EXTRA_CREDI: "Extra a capital CrediJamar",
   EXTRA_CHUNKY: "Extra a capital Chunky",
   EXTRA_CARDS: "Extra a tarjetas",
@@ -439,7 +439,7 @@ function Overview({
               ? displayDate(d.current.closeDate)
               : "Revisar plan"
           }
-          note="Plan regular + CrediJamar · Proyección"
+          note="Con abonos voluntarios mensuales · Proyección"
           icon={CalendarDays}
         />
       </div>
@@ -499,7 +499,7 @@ function Overview({
         <section className="panel payment-panel">
           <div className="panel-heading">
             <h2>El plan de cada mes</h2>
-            <span className="tag">Cuotas fijas</span>
+            <span className="tag">Cuota regular fija</span>
           </div>
           <div className="monthly-amount">
             <strong>{usd(p.regular)}</strong>
@@ -525,17 +525,18 @@ function Overview({
             <span className="source-icon credi">CJ</span>
             <div>
               <strong>CrediJamar</strong>
-              <small>Cuota adicional · Máximo 24 meses</small>
+              <small>Abono voluntario · Referencia mensual</small>
             </div>
             <strong>+ {usd(expectedCredi(d))}</strong>
           </div>
           <div className="payment-total">
-            <span>Total mensual previsto</span>
+            <span>Total si haces el abono voluntario</span>
             <strong>{usd(p.regular + expectedCredi(d))}</strong>
           </div>
           <p className="fine-print">
-            Los aportes recibidos y los pagos al banco se registran por
-            separado.
+            CrediJamar solo se paga cuando registras su abono. La deducción
+            salarial no crea ese pago. Los aportes recibidos se registran por
+            separado de su aplicación al banco.
           </p>
         </section>
       </div>
@@ -663,7 +664,7 @@ function SourceCard({
         {s === "chunky"
           ? `${usd(expectedChunky(d))} / mes · Fijo / ajuste final`
           : s === "credi"
-            ? `${usd(expectedCredi(d))} adicional / mes`
+            ? `${usd(expectedCredi(d))} voluntario / mes · Referencia`
             : s === "cards"
               ? "Responsabilidad de Javier"
               : "Capital separado de tarjetas"}
@@ -1318,12 +1319,12 @@ function Projections({ d }: { d: Snapshot }) {
           {
             title: "Plan habitual",
             f: d.habitual,
-            note: "Regular + CrediJamar, hasta su liquidación",
+            note: "Si haces abonos voluntarios mensuales a CrediJamar",
           },
           {
             title: "Trayectoria actual",
             f: d.current,
-            note: "Pagos reales + plan futuro · Estimación",
+            note: "Pagos registrados + abonos voluntarios futuros supuestos",
           },
         ].map((x, i) => (
           <section
@@ -1411,11 +1412,12 @@ function Projections({ d }: { d: Snapshot }) {
         <p className="fine-print">
           Referencia: mismos pagos regulares observados, completados con cuotas
           futuras. Se comparan trayectorias completas: solo regular, regular +
-          CrediJamar y pagos reales + plan. El ahorro incluye cargos futuros
-          estimados y no suma el capital abonado. La diferencia inicial entre 84
-          y {d.regular.payments} pagos no es ahorro por abonos. Con extractos,
-          sus devengos confirmados se mantienen iguales en el historial
-          contrafactual.
+          abonos voluntarios CrediJamar y pagos reales + plan. Los abonos
+          futuros son una hipótesis; no se registran pagos automáticamente. El
+          ahorro incluye cargos futuros estimados y no suma el capital abonado.
+          La diferencia inicial entre 84 y {d.regular.payments} pagos no es
+          ahorro por abonos. Con extractos, sus devengos confirmados se
+          mantienen iguales en el historial contrafactual.
         </p>
       </section>
       <div className="bottom-grid section-gap">
@@ -1823,8 +1825,10 @@ function Budget({ d, open }: { d: Snapshot; open: () => void }) {
           <div className="composition-line" key={x.source}>
             <span>{names[x.source]}</span>
             <span>
-              Esperado {usd(x.expected)} · Recibido {usd(x.received)} ·
-              Pendiente {usd(x.pending)}
+              {x.source === "credi" ? "Referencia voluntaria" : "Esperado"}{" "}
+              {usd(x.expected)} · Recibido {usd(x.received)} ·
+              {x.source === "credi" ? "Diferencia con referencia" : "Pendiente"}{" "}
+              {usd(x.pending)}
             </span>
           </div>
         ))}
@@ -1832,6 +1836,8 @@ function Budget({ d, open }: { d: Snapshot; open: () => void }) {
           Aportes por período de responsabilidad; caja por fecha efectiva de
           recepción. Los importes recibidos no prueban su aplicación al banco.
           Las responsabilidades configuradas no crean movimientos reales.
+          CrediJamar es voluntario; la referencia mensual no es un pago
+          realizado.
         </p>
       </section>
     </>

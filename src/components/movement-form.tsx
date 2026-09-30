@@ -275,7 +275,7 @@ export default function MovementForm({
                     {type === "REGULAR"
                       ? "Pago real descontado de planilla. Puede ser parcial o quincenal; no se marca una cuota completa como pagada automáticamente."
                       : type === "CREDI"
-                        ? "Aplicación adicional al capital legal BG. Primero compensa únicamente cargos CrediJamar ya financiados por Javier; el resto reduce capital CrediJamar."
+                        ? "Abono voluntario registrado por ti, con fecha e importe reales. No se crea al registrar la deducción salarial. Primero compensa cargos CrediJamar ya financiados por Javier; el resto reduce capital CrediJamar."
                         : type === "NO_PAYMENT"
                           ? "Confirmas que no hubo pagos en este período. Un mes sin registros sigue siendo desconocido."
                           : "Reduce exclusivamente el capital del destino elegido. El exceso queda sin aplicar; no se reasigna."}

@@ -222,7 +222,7 @@ export default function SettingsForm({
               />
             </label>
             <label>
-              Cuota adicional CrediJamar (USD)
+              Referencia mensual voluntaria CrediJamar (USD)
               <input
                 name="credi"
                 type="number"
