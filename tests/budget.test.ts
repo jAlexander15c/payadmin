@@ -428,3 +428,89 @@ test("Comenzar a mitad de quincena: saldo actual y ajustes no inventan gastos; i
   assert.equal(half.savingsBalance, b.savingsBalance);
   assert.equal(b.gross, 131092);
 });
+test("Estadísticas salariales permanecen iguales con ingresos extra, aportes y ajustes de saldo", () => {
+  for (const salaryIncludesLoan of [false, true]) {
+    const d: any = data();
+    d.versions = [{ ...DEFAULT, salary: 131091, salaryIncludesLoan }];
+    const before = (["1", "2", "all"] as const).map((half) =>
+      budgetFor(d, "2026-10", half),
+    );
+    d.cash = [
+      {
+        date: "2026-10-05",
+        status: "active",
+        kind: "PAYROLL",
+        amount: "496.66",
+      },
+      { date: "2026-10-20", status: "active", kind: "INCOME", amount: "80.00" },
+    ];
+    d.contributions = [
+      {
+        date: "2026-10-20",
+        status: "active",
+        period: "2026-10",
+        source_id: "chunky",
+        amount: "85.62",
+      },
+    ];
+    d.fundAdjustments = [
+      {
+        date: "2026-10-05",
+        bucket: "NEEDS",
+        operation: "SET",
+        effect: "ADJUSTMENT",
+        amount: "100.00",
+        delta: "100.00",
+      },
+      {
+        date: "2026-10-05",
+        bucket: "WANTS",
+        operation: "ADD",
+        effect: "INCOME",
+        amount: "500.00",
+        delta: "500.00",
+      },
+      {
+        date: "2026-10-20",
+        bucket: "SAVINGS",
+        operation: "ADD",
+        effect: "INCOME",
+        amount: "200.00",
+        delta: "200.00",
+      },
+      {
+        date: "2026-10-20",
+        bucket: "NEEDS",
+        operation: "REMOVE",
+        effect: "ADJUSTMENT",
+        amount: "25.00",
+        delta: "-25.00",
+      },
+    ];
+    for (const [index, half] of (["1", "2", "all"] as const).entries()) {
+      const b = budgetFor(d, "2026-10", half),
+        prior = before[index];
+      for (const key of [
+        "gross",
+        "net",
+        "baselineSalary",
+        "regular",
+        "load",
+        "room",
+        "availableAfterExpected",
+      ] as const)
+        assert.equal(b[key], prior[key]);
+      assert.deepEqual(b.distribution, prior.distribution);
+      assert.deepEqual(
+        b.categories.map((c) => c.baseLimit),
+        prior.categories.map((c) => c.baseLimit),
+      );
+      assert.equal(b.payrollIncome, half === "2" ? 0 : 49666);
+      assert.equal(
+        b.otherIncome,
+        half === "1" ? 50000 : half === "2" ? 28000 : 78000,
+      );
+      assert.equal(b.income, b.payrollIncome + b.otherIncome);
+    }
+  }
+});

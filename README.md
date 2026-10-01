@@ -79,6 +79,8 @@ El Dockerfile compila sin credenciales de base de datos. La migración es transa
 
 La aplicación abre en modo oscuro. El botón de sol o luna de la esquina superior derecha cambia entre oscuro y claro y conserva la elección en el navegador. Se aplica al resumen, tablas, gráficas, formularios, login y registro. La preferencia no guarda datos financieros.
 
+La referencia 50/30/20 y las proyecciones de presupuesto se basan en el salario configurado para el período. Los ingresos extra, aportes y ajustes de saldo no cambian esa base salarial. La planilla neta recibida se muestra separada de los otros ingresos; la caja real sí incorpora los ingresos efectivamente registrados. Los extras asignados a un apartado se muestran como fondos adicionales a su presupuesto salarial.
+
 - **Resumen:** capital, pagos reales, progreso por capital y composición pendiente de las cuatro bolsas respecto al capital inicial BG.
 - **Movimientos:** pagos reales, aportes recibidos y caja en listas separadas. Vínculos de aporte a pago con importes explícitos, sin doble registro. Permite varios pagos quincenales y correcciones/anulaciones con motivo, versión y auditoría.
 - **Responsabilidades:** saldos, cargos pagados y pendientes, calendario interno mensual, plazos y composición. Los cargos CrediJamar financiados por Javier y sus compensaciones se ven en Movimientos.

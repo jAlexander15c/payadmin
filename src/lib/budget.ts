@@ -55,10 +55,10 @@ export function budgetFor(
   const total = (rows: Row[]) => sum(rows.map((r) => cents(r.amount)));
   const extraIncome = total(newIncome),
     extraIncomeSaved = total(newIncome.filter((r) => r.bucket === "SAVINGS"));
-  const income =
-      total(
-        entries.filter((r) => r.kind === "PAYROLL" || r.kind === "INCOME"),
-      ) + extraIncome,
+  const payrollIncome = total(entries.filter((r) => r.kind === "PAYROLL")),
+    otherIncome =
+      total(entries.filter((r) => r.kind === "INCOME")) + extraIncome,
+    income = payrollIncome + otherIncome,
     reimb = total(receipts),
     spent =
       total(
@@ -292,6 +292,8 @@ export function budgetFor(
     distribution,
     room,
     income,
+    payrollIncome,
+    otherIncome,
     extraIncome,
     extraIncomeSaved,
     reimb,

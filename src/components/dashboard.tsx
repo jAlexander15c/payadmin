@@ -1674,7 +1674,6 @@ function Budget({ d, open }: { d: Snapshot; open: () => void }) {
     net,
     distribution,
     room,
-    income,
     reimb,
     spent,
     saving,
@@ -1790,16 +1789,20 @@ function Budget({ d, open }: { d: Snapshot; open: () => void }) {
           </div>
           <p className="notice">
             <Info size={17} />
-            La caja real solo incorpora planilla neta registrada y aportes
-            recibidos, resta extras bancarios, gastos de caja y ahorro separado.
-            Los gastos desde ahorros acumulados solo reducen el saldo de ahorro.
-            El descuento regular de planilla no se resta otra vez. No incluye un
-            saldo inicial de efectivo desconocido.
+            La caja real incorpora planilla neta, otros ingresos registrados y
+            aportes recibidos, resta extras bancarios, gastos de caja y ahorro
+            separado. Los gastos desde ahorros acumulados solo reducen el saldo
+            de ahorro. El descuento regular de planilla no se resta otra vez. No
+            incluye un saldo inicial de efectivo desconocido.
           </p>
           <div className="detail-grid">
             <div>
-              <small>Ingresos netos registrados</small>
-              <strong>{usd(income)}</strong>
+              <small>Planilla neta recibida</small>
+              <strong>{usd(b.payrollIncome)}</strong>
+            </div>
+            <div>
+              <small>Otros ingresos recibidos</small>
+              <strong>{usd(b.otherIncome)}</strong>
               {b.extraIncome > 0 && (
                 <small>
                   Incluye {usd(b.extraIncome)} de ingresos extra en Mis totales
@@ -1822,9 +1825,20 @@ function Budget({ d, open }: { d: Snapshot; open: () => void }) {
         </section>
         <section className="panel">
           <div className="panel-heading">
-            <h2>Referencia 50 / 30 / 20</h2>
+            <h2>Referencia salarial 50 / 30 / 20</h2>
             <Wallet size={20} />
           </div>
+          <p className="fine-print">
+            Base salarial del período:{" "}
+            {usd(
+              distribution.reduce(
+                (total, category) => total + category.amount,
+                0,
+              ),
+            )}
+            . Los ingresos extra, aportes y ajustes de saldo se muestran por
+            separado y no cambian estos porcentajes.
+          </p>
           {distribution.map((x) => (
             <div className="budget-category" key={x.name}>
               <span className={"dot " + x.color} />

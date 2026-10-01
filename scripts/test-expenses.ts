@@ -363,6 +363,11 @@ async function main() {
     assert.equal(b.categories[1].used, 3000);
     assert.equal(b.categories[1].extraIncome, 4000);
     assert.equal(b.categories[2].extraIncome, 2000);
+    assert.equal(b.payrollIncome, 49666);
+    assert.equal(b.otherIncome, 6000);
+    await page
+      .getByText("Base salarial: 50 / 30 / 20", { exact: true })
+      .waitFor();
     assert.equal(b.savingsBalance, 12500);
     assert.deepEqual(
       (await snapshot()).funds.map((r: any) => r.balance),
@@ -423,6 +428,21 @@ async function main() {
     await page.getByRole("button", { name: "Abrir navegación" }).click();
     await nav("Mi presupuesto");
     await page.getByRole("heading", { name: "Mi presupuesto." }).waitFor();
+    await page.getByLabel("Período", { exact: true }).fill(period);
+    await page
+      .getByRole("button", { name: "Mes completo", exact: true })
+      .click();
+    await page
+      .getByRole("heading", { name: "Referencia salarial 50 / 30 / 20" })
+      .waitFor();
+    const salaryStat = page.locator(".detail-grid > div").filter({
+      has: page.getByText("Planilla neta recibida", { exact: true }),
+    });
+    const otherIncomeStat = page.locator(".detail-grid > div").filter({
+      has: page.getByText("Otros ingresos recibidos", { exact: true }),
+    });
+    await salaryStat.getByText("$496.66", { exact: true }).waitFor();
+    await otherIncomeStat.getByText("$61.00", { exact: true }).waitFor();
     await overflow();
     assert.deepEqual(errors, []);
     console.log(

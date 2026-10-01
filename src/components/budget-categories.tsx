@@ -11,7 +11,7 @@ export default function BudgetCategories({
     <section className="panel section-gap">
       <div className="panel-heading">
         <h2>Disponible por categoría</h2>
-        <span className="tag">50 / 30 / 20 + extras registrados</span>
+        <span className="tag">Base salarial: 50 / 30 / 20</span>
       </div>
       <div className="expense-budget-grid">
         {b.categories.map((c, i) => (
@@ -27,7 +27,7 @@ export default function BudgetCategories({
                 : "Disponible sin comprometer"}
             </small>
             <div className="composition-line">
-              <span>Base de presupuesto</span>
+              <span>Presupuesto según salario</span>
               <b>{usd(c.baseLimit)}</b>
             </div>
             {c.extraIncome > 0 && (
@@ -50,8 +50,10 @@ export default function BudgetCategories({
         ))}
       </div>
       <p className="fine-print">
-        Necesidades 50%, personal 30% y ahorro/deuda 20%. Ahorro y deuda ya
-        descuenta tu carga regular BG; los abonos voluntarios se descuentan
+        La referencia y los porcentajes se calculan sobre tu salario
+        configurado: necesidades 50%, personal 30% y ahorro/deuda 20%. Agregar o
+        quitar dinero de tus saldos no cambia esa base salarial. Ahorro y deuda
+        ya descuenta tu carga regular BG; los abonos voluntarios se descuentan
         cuando los registras. Los fijos pendientes reservan presupuesto, pero no
         salen de caja hasta pagarlos. Los ingresos extra aumentan únicamente el
         apartado que elijas; no se reparten automáticamente. Puedes ajustar tus
