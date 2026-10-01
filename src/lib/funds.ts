@@ -2,6 +2,23 @@ import { cents } from "./finance";
 export const FUND_BUCKETS = ["NEEDS", "WANTS", "SAVINGS"] as const;
 export type FundBucket = (typeof FUND_BUCKETS)[number];
 type Row = Record<string, any>;
+export type FundEffect = "ALLOCATION" | "INCOME" | "EXPENSE" | "ADJUSTMENT";
+export function fundEffect(r: Row): FundEffect {
+  return (
+    r.effect ??
+    (r.operation === "ADD"
+      ? "ALLOCATION"
+      : r.operation === "REMOVE"
+        ? "EXPENSE"
+        : "ADJUSTMENT")
+  );
+}
+export const fundEffectNames: Record<FundEffect, string> = {
+  ALLOCATION: "Dinero ya disponible",
+  INCOME: "Ingreso extra",
+  EXPENSE: "Gasto o salida nueva",
+  ADJUSTMENT: "Ajuste de saldo",
+};
 export function fundBalances(
   d: { cash: Row[]; fundAdjustments?: Row[] },
   asOf: string,

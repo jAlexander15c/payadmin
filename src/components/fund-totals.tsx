@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Plus, Minus, Pencil, X, Download } from "lucide-react";
 import { cents } from "@/lib/finance";
+import { fundEffect, fundEffectNames, type FundEffect } from "@/lib/funds";
 import { type Snapshot, usd, displayDate } from "./dashboard";
 type Wallet = Snapshot["funds"][number];
 type Operation = "SET" | "ADD" | "REMOVE";
@@ -72,11 +73,13 @@ export default function FundTotals({
         ))}
       </div>
       <p className="fine-print">
-        Primero usa «Editar total» para indicar lo que tienes ahora. Los gastos
-        de Necesidades descuentan Fijo; los personales descuentan Personal; los
-        pagados desde ahorros acumulados descuentan Ahorro. «Agregar» distribuye
-        fondos que ya tienes; «Sacar» registra una salida. Ingresa cada salida
-        una sola vez, aquí o en Registrar gasto/pago.
+        Puedes empezar aunque la quincena ya haya comenzado: usa «Editar total»
+        para indicar lo que te queda hoy, sin registrar los gastos anteriores.
+        Los gastos de Necesidades descuentan Fijo; los personales descuentan
+        Personal; los pagados desde ahorros acumulados descuentan Ahorro.
+        «Agregar» permite ingresos extra o dinero que ya tenías; «Sacar» permite
+        una salida nueva o un ajuste de saldo. Ingresa cada salida una sola vez,
+        aquí o en Registrar gasto/pago.
       </p>
       <details className="fund-history">
         <summary>
@@ -96,6 +99,7 @@ export default function FundTotals({
                   <th>Fecha</th>
                   <th>Apartado</th>
                   <th>Operación</th>
+                  <th>Tipo de movimiento</th>
                   <th>Importe</th>
                   <th>Cambio</th>
                   <th>Antes → después</th>
@@ -114,6 +118,7 @@ export default function FundTotals({
                       }
                     </td>
                     <td>{operationNames[r.operation as Operation]}</td>
+                    <td>{fundEffectNames[fundEffect(r)]}</td>
                     <td>{usd(cents(r.amount))}</td>
                     <td>{usd(cents(r.delta))}</td>
                     <td>
@@ -168,6 +173,13 @@ function FundForm({
         : "",
     ),
     [busy, setBusy] = useState(false),
+    [effect, setEffect] = useState<FundEffect>(
+      operation === "ADD"
+        ? "INCOME"
+        : operation === "REMOVE"
+          ? "EXPENSE"
+          : "ADJUSTMENT",
+    ),
     [error, setError] = useState("");
   useEffect(() => {
     dialog.current?.showModal();
@@ -195,6 +207,7 @@ function FundForm({
           requestKey: key.current,
           bucket: wallet.id,
           operation,
+          effect,
           amount,
           expectedBalance: wallet.balance,
           reason: String(f.get("reason") || ""),
@@ -241,6 +254,40 @@ function FundForm({
           <p className="fine-print">
             Saldo calculado desde tus registros: {usd(wallet.balance)}.
           </p>
+          {operation === "SET" && (
+            <p className="notice">
+              Pon el dinero que te queda ahora, aunque ya hayas gastado antes de
+              usar la app. No necesitas reconstruir esos gastos.
+            </p>
+          )}
+          {operation === "ADD" && (
+            <label>
+              ¿Qué dinero estás agregando?
+              <select
+                value={effect}
+                onChange={(e) => setEffect(e.target.value as FundEffect)}
+              >
+                <option value="INCOME">Dinero extra que acaba de entrar</option>
+                <option value="ALLOCATION">
+                  Dinero que ya tenía o ya registré
+                </option>
+              </select>
+            </label>
+          )}
+          {operation === "REMOVE" && (
+            <label>
+              ¿Qué quieres registrar?
+              <select
+                value={effect}
+                onChange={(e) => setEffect(e.target.value as FundEffect)}
+              >
+                <option value="EXPENSE">Un gasto o salida nueva</option>
+                <option value="ADJUSTMENT">
+                  Solo ajustar saldo (gastos anteriores o corrección)
+                </option>
+              </select>
+            </label>
+          )}
           <label>
             {operation === "SET" ? "Nuevo total (USD)" : "Importe (USD)"}
             <input
@@ -255,11 +302,9 @@ function FundForm({
             />
           </label>
           <label>
-            Concepto o motivo
+            Concepto o motivo (opcional)
             <textarea
               name="reason"
-              required
-              minLength={3}
               maxLength={500}
               rows={2}
               placeholder={
@@ -277,12 +322,18 @@ function FundForm({
           </p>
           <p className="fine-print">
             {operation === "SET"
-              ? "Este ajuste pone el saldo en el total que indiques. No crea un gasto ni un ingreso ni cambia el reparto 50/30/20."
+              ? "El saldo quedará en el total que indiques. No vuelve a cobrar gastos anteriores ni crea un ingreso."
               : operation === "ADD"
-                ? "Agrega fondos que ya tienes en este apartado. No crea otro ingreso de caja ni aumenta el presupuesto mensual. No agregues de nuevo dinero que ya aparece en este saldo."
-                : wallet.id === "SAVINGS"
-                  ? "Descuenta una salida del ahorro acumulado. No se resta otra vez de caja ni del ahorro del mes. Si ya registraste este gasto, no lo saques de nuevo."
-                  : "Esta salida descuenta el saldo, la caja y el presupuesto de su categoría. Para pagar un gasto fijo definido, usa Registrar pago; no ingreses la misma salida dos veces."}
+                ? effect === "INCOME"
+                  ? wallet.id === "SAVINGS"
+                    ? "Registra un ingreso extra destinado directamente a ahorro. Se suma al saldo de ahorro y al presupuesto de este apartado; no queda disponible en caja ni modifica tu salario."
+                    : "Registra el ingreso extra una sola vez: suma al saldo, a la caja y al presupuesto de este apartado. Tú eliges dónde ponerlo; no cambia tu salario ni se reparte automáticamente."
+                  : "Agrega dinero que ya tenías o cuyo ingreso ya registraste. Suma al saldo sin duplicar ingresos."
+                : effect === "ADJUSTMENT"
+                  ? "Solo reduce el saldo para reflejar lo que tienes ahora. No crea un gasto nuevo ni altera los ingresos o gastos de esta quincena."
+                  : wallet.id === "SAVINGS"
+                    ? "Descuenta una salida del ahorro acumulado. No se resta otra vez de caja ni del ahorro del mes. Si ya registraste este gasto, no lo saques de nuevo."
+                    : "Esta salida descuenta el saldo, la caja y el presupuesto de su categoría. Para pagar un gasto fijo definido, usa Registrar pago; no ingreses la misma salida dos veces."}
           </p>
           {error && (
             <p className="error" role="alert">

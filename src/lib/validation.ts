@@ -106,18 +106,54 @@ export const fundAdjustmentInput = z
     requestKey: z.uuid(),
     bucket: z.enum(["NEEDS", "WANTS", "SAVINGS"]),
     operation: z.enum(["SET", "ADD", "REMOVE"]),
+    effect: z
+      .enum(["ALLOCATION", "INCOME", "EXPENSE", "ADJUSTMENT"])
+      .optional(),
     amount,
     expectedBalance: z
       .number()
       .int()
       .min(-Number.MAX_SAFE_INTEGER)
       .max(Number.MAX_SAFE_INTEGER),
-    reason: z.string().trim().min(3).max(500),
+    reason: z.string().trim().max(500).default(""),
   })
   .strict()
   .refine(
     (v) => v.operation === "SET" || Number(v.amount) > 0,
     "El importe debe ser mayor que cero.",
+  )
+  .transform((v) => {
+    const effect =
+      v.effect ??
+      (v.operation === "ADD"
+        ? "ALLOCATION"
+        : v.operation === "REMOVE"
+          ? "EXPENSE"
+          : "ADJUSTMENT");
+    return {
+      ...v,
+      effect,
+      reason:
+        v.reason ||
+        (v.operation === "SET"
+          ? "Saldo actual"
+          : effect === "INCOME"
+            ? "Ingreso extra"
+            : effect === "ALLOCATION"
+              ? "Dinero ya disponible"
+              : effect === "EXPENSE"
+                ? "Salida de dinero"
+                : "Ajuste de saldo"),
+    };
+  })
+  .refine(
+    (v) =>
+      v.operation === "SET"
+        ? v.effect === "ADJUSTMENT"
+        : v.operation === "ADD"
+          ? ["ALLOCATION", "INCOME"].includes(v.effect)
+          : ["EXPENSE", "ADJUSTMENT"].includes(v.effect),
+    "El tipo de movimiento no corresponde a la operación.",
   );
 export const statementInput = z
   .object({

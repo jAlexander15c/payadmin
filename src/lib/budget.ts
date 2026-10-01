@@ -1,4 +1,5 @@
 import Decimal from "decimal.js";
+import { fundEffect } from "./funds";
 import {
   cents,
   paramsAt,
@@ -49,17 +50,22 @@ export function budgetFor(
     ),
     entries = d.cash.filter((r) => r.status === "active" && inHalf(r));
   const adjustments = (d.fundAdjustments || []).filter(inHalf),
-    withdrawals = adjustments.filter((r) => r.operation === "REMOVE");
+    withdrawals = adjustments.filter((r) => fundEffect(r) === "EXPENSE"),
+    newIncome = adjustments.filter((r) => fundEffect(r) === "INCOME");
   const total = (rows: Row[]) => sum(rows.map((r) => cents(r.amount)));
-  const income = total(
-      entries.filter((r) => r.kind === "PAYROLL" || r.kind === "INCOME"),
-    ),
+  const extraIncome = total(newIncome),
+    extraIncomeSaved = total(newIncome.filter((r) => r.bucket === "SAVINGS"));
+  const income =
+      total(
+        entries.filter((r) => r.kind === "PAYROLL" || r.kind === "INCOME"),
+      ) + extraIncome,
     reimb = total(receipts),
     spent =
       total(
         entries.filter((r) => r.kind === "EXPENSE" && r.funding !== "SAVINGS"),
       ) + total(withdrawals.filter((r) => r.bucket !== "SAVINGS")),
-    saving = total(entries.filter((r) => r.kind === "SAVING"));
+    saving =
+      total(entries.filter((r) => r.kind === "SAVING")) + extraIncomeSaved;
   const savingsSpent =
     total(
       entries.filter((r) => r.kind === "EXPENSE" && r.funding === "SAVINGS"),
@@ -100,7 +106,11 @@ export function budgetFor(
   );
   const savingsAdjustment = sum(
     adjustments
-      .filter((r) => r.bucket === "SAVINGS" && r.operation !== "REMOVE")
+      .filter(
+        (r) =>
+          r.bucket === "SAVINGS" &&
+          !["INCOME", "EXPENSE"].includes(fundEffect(r)),
+      )
       .map((r) => cents(r.delta)),
   );
   const savingsBalance =
@@ -230,7 +240,9 @@ export function budgetFor(
     );
   const fixedPending = sum(fixed.map((v) => v.pending));
   const categories = ["NEEDS", "WANTS", "SAVINGS"].map((id, i) => {
-    const limit = i === 2 ? room : distribution[i].amount;
+    const baseLimit = i === 2 ? room : distribution[i].amount,
+      extraIncome = total(newIncome.filter((r) => r.bucket === id)),
+      limit = baseLimit + extraIncome;
     const used =
       total(
         entries.filter(
@@ -244,12 +256,16 @@ export function budgetFor(
                   : r.category === id)),
         ),
       ) +
-      (i === 2 ? extras : total(withdrawals.filter((r) => r.bucket === id)));
+      (i === 2
+        ? extras + extraIncomeSaved
+        : total(withdrawals.filter((r) => r.bucket === id)));
     const reserved = i === 0 ? fixedPending : 0;
     return {
       id,
       name: ["Gastos fijos y necesidades", "Personal", "Ahorro y deuda"][i],
       limit,
+      baseLimit,
+      extraIncome,
       used,
       reserved,
       remaining: limit - used - reserved,
@@ -276,6 +292,8 @@ export function budgetFor(
     distribution,
     room,
     income,
+    extraIncome,
+    extraIncomeSaved,
     reimb,
     spent,
     saving,

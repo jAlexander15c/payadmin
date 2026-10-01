@@ -57,6 +57,12 @@ test("Totales PostgreSQL: idempotencia, gastos, saldo cero y edición concurrent
       );
       assert.ok(rows.every((r) => r.id === rows[0].id));
       assert.equal(rows.filter((r) => !r.duplicate).length, 1);
+      // Before this feature, persisted requests did not contain an effect.
+      await database().query(
+        "UPDATE audit_log SET after_data=after_data-'effect' WHERE entity='fund' AND entity_id=$1",
+        [rows[0].id],
+      );
+      assert.equal((await adjustFund(body, user, clock)).duplicate, true);
       const d = await snapshot(clock);
       assert.equal(d.funds[0].balance, 10000);
       assert.equal(d.cash.length, 0);
@@ -172,6 +178,69 @@ test("Totales PostgreSQL: idempotencia, gastos, saldo cero y edición concurrent
           )
         ).rows[0].n,
         d.fundAdjustments.length,
+      );
+    },
+  );
+  await t.test(
+    "Ingreso extra y ajuste por gastos anteriores se distinguen sin obligar a reconstruirlos",
+    async () => {
+      const baseline = budgetFor(await snapshot(clock), "2026-10", "all");
+      const raw = {
+        ...input("WANTS", "ADD", "50.00", 0),
+        effect: "INCOME",
+        reason: "",
+      };
+      const rows = await Promise.all([
+        adjustFund(raw, user, clock),
+        adjustFund(raw, user, clock),
+      ]);
+      assert.equal(rows[0].id, rows[1].id);
+      await adjustFund(
+        {
+          ...input("WANTS", "REMOVE", "20.00", 5000),
+          effect: "ADJUSTMENT",
+          reason: "",
+        },
+        user,
+        clock,
+      );
+      const d = await snapshot(clock),
+        b = budgetFor(d, "2026-10", "all");
+      assert.equal(d.funds[1].balance, 3000);
+      assert.equal(b.income, baseline.income + 5000);
+      assert.equal(b.spent, baseline.spent);
+      assert.equal(b.actualCash, baseline.actualCash + 5000);
+      assert.equal(b.categories[1].extraIncome, 5000);
+      assert.equal(b.categories[1].used, 0);
+      assert.ok(
+        d.fundAdjustments
+          .filter((r) => r.bucket === "WANTS")
+          .every((r) => r.reason.length > 0),
+      );
+      await adjustFund(
+        { ...input("SAVINGS", "ADD", "10.00", 18000), effect: "INCOME" },
+        user,
+        clock,
+      );
+      await adjustFund(
+        { ...input("SAVINGS", "REMOVE", "5.00", 19000), effect: "ADJUSTMENT" },
+        user,
+        clock,
+      );
+      const next = budgetFor(await snapshot(clock), "2026-10", "all");
+      assert.equal(next.savingsBalance, 18500);
+      assert.equal(next.actualCash, b.actualCash);
+      assert.equal(next.spent, b.spent);
+      assert.equal(next.savingsSpent, b.savingsSpent);
+      assert.equal(next.extraIncomeSaved, 1000);
+      await assert.rejects(
+        () =>
+          adjustFund(
+            { ...input("WANTS", "REMOVE", "1.00", 3000), effect: "INCOME" },
+            user,
+            clock,
+          ),
+        /no corresponde/,
       );
     },
   );

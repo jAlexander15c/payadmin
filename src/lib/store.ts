@@ -487,11 +487,20 @@ export async function adjustFund(
       [v.requestKey],
     );
     if (previous.rowCount) {
-      const same = await c.query(
-        "SELECT after_data=$2::jsonb AS equal FROM audit_log WHERE entity='fund' AND entity_id=$1 AND action='create' ORDER BY id LIMIT 1",
-        [previous.rows[0].id, JSON.stringify(v)],
+      const creation = await c.query(
+        "SELECT after_data FROM audit_log WHERE entity='fund' AND entity_id=$1 AND action='create' ORDER BY id LIMIT 1",
+        [previous.rows[0].id],
       );
-      if (!same.rows[0]?.equal)
+      const normalized = fundAdjustmentInput.safeParse(
+        creation.rows[0]?.after_data,
+      );
+      const same = normalized.success
+        ? await c.query("SELECT $1::jsonb=$2::jsonb AS equal", [
+            JSON.stringify(normalized.data),
+            JSON.stringify(v),
+          ])
+        : null;
+      if (!same?.rows[0]?.equal)
         throw new HttpError(
           409,
           "Este identificador ya se usó con datos distintos.",
@@ -522,7 +531,7 @@ export async function adjustFund(
       throw new HttpError(400, "El saldo supera el importe permitido.");
     const id = randomUUID();
     await c.query(
-      "INSERT INTO fund_adjustments(id,request_key,occurred_on,bucket,operation,amount,delta,before_balance,after_balance,reason,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+      "INSERT INTO fund_adjustments(id,request_key,occurred_on,bucket,operation,amount,delta,before_balance,after_balance,reason,created_by,effect) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
       [
         id,
         v.requestKey,
@@ -535,6 +544,7 @@ export async function adjustFund(
         money(before + delta),
         v.reason,
         user,
+        v.effect,
       ],
     );
     await audit(

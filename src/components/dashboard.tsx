@@ -1800,6 +1800,11 @@ function Budget({ d, open }: { d: Snapshot; open: () => void }) {
             <div>
               <small>Ingresos netos registrados</small>
               <strong>{usd(income)}</strong>
+              {b.extraIncome > 0 && (
+                <small>
+                  Incluye {usd(b.extraIncome)} de ingresos extra en Mis totales
+                </small>
+              )}
             </div>
             <div>
               <small>Gastos de caja registrados</small>

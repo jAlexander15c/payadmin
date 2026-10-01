@@ -16,6 +16,7 @@ import {
 } from "@/lib/store";
 import { period, simulationInput } from "@/lib/validation";
 import { budgetFor } from "@/lib/budget";
+import { fundEffect, fundEffectNames } from "@/lib/funds";
 import { cents, money, simulate } from "@/lib/finance";
 import { registerInitialUser } from "@/lib/initial-registration";
 export const runtime = "nodejs";
@@ -193,6 +194,7 @@ export async function GET(req: Request, ctx: Context) {
             "Fecha",
             "Apartado",
             "Operación",
+            "Tipo de movimiento",
             "Importe USD",
             "Cambio USD",
             "Antes USD",
@@ -204,6 +206,7 @@ export async function GET(req: Request, ctx: Context) {
             r.date,
             r.bucket,
             r.operation,
+            fundEffectNames[fundEffect(r)],
             r.amount,
             r.delta,
             r.before_balance,
@@ -238,12 +241,16 @@ export async function GET(req: Request, ctx: Context) {
             x.fixed_expense_id,
           ]),
           ...data.fundAdjustments
-            .filter((x) => x.operation === "REMOVE")
+            .filter((x) => ["EXPENSE", "INCOME"].includes(fundEffect(x)))
             .map((x) => [
               x.id,
               x.date,
               x.date.slice(0, 7),
-              "WITHDRAWAL",
+              fundEffect(x) === "INCOME"
+                ? x.bucket === "SAVINGS"
+                  ? "INCOME_TO_SAVINGS"
+                  : "INCOME"
+                : "WITHDRAWAL",
               x.bucket,
               x.amount,
               x.reason,

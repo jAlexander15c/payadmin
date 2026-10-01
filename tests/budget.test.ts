@@ -385,3 +385,46 @@ test("Totales editables: agregar/editar no duplica ingresos; retiros consumen su
   assert.equal(b.savingsBalance, c.savingsBalance);
   assert.equal(a.actualCash + c.actualCash, b.actualCash);
 });
+test("Comenzar a mitad de quincena: saldo actual y ajustes no inventan gastos; ingresos extra van al apartado elegido", () => {
+  const d: any = data();
+  const row = (
+    bucket: string,
+    operation: string,
+    amount: string,
+    effect: string,
+    delta = amount,
+  ) => ({ date: "2026-10-20", bucket, operation, amount, effect, delta });
+  d.fundAdjustments = [
+    row("NEEDS", "SET", "100.00", "ADJUSTMENT"),
+    row("NEEDS", "ADD", "20.00", "ALLOCATION"),
+    row("WANTS", "SET", "80.00", "ADJUSTMENT"),
+    row("WANTS", "ADD", "40.00", "INCOME"),
+    row("WANTS", "REMOVE", "10.00", "ADJUSTMENT", "-10.00"),
+    row("WANTS", "REMOVE", "5.00", "EXPENSE", "-5.00"),
+    row("SAVINGS", "SET", "50.00", "ADJUSTMENT"),
+    row("SAVINGS", "ADD", "30.00", "INCOME"),
+    row("SAVINGS", "REMOVE", "10.00", "ADJUSTMENT", "-10.00"),
+    row("SAVINGS", "REMOVE", "5.00", "EXPENSE", "-5.00"),
+  ];
+  const b = budgetFor(d, "2026-10", "all"),
+    half = budgetFor(d, "2026-10", "2");
+  assert.equal(b.extraIncome, 7000);
+  assert.equal(b.income, 7000);
+  assert.equal(b.extraIncomeSaved, 3000);
+  assert.equal(b.saving, 3000);
+  assert.equal(b.spent, 500);
+  assert.equal(b.actualCash, 3500);
+  assert.equal(b.categories[0].extraIncome, 0);
+  assert.equal(b.categories[0].used, 0);
+  assert.equal(b.categories[1].extraIncome, 4000);
+  assert.equal(b.categories[1].used, 500);
+  assert.equal(b.categories[1].remaining, b.categories[1].baseLimit + 3500);
+  assert.equal(b.categories[2].extraIncome, 3000);
+  assert.equal(b.categories[2].used, 3000);
+  assert.equal(b.savingsBalance, 6500);
+  assert.equal(b.savingsSpent, 500);
+  assert.equal(b.savingsAdjustment, 4000);
+  assert.equal(half.actualCash, b.actualCash);
+  assert.equal(half.savingsBalance, b.savingsBalance);
+  assert.equal(b.gross, 131092);
+});

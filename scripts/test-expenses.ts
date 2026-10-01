@@ -247,6 +247,10 @@ async function main() {
         ["Sacar", "5.00"],
       ]) {
         await card.getByRole("button", { name, exact: true }).click();
+        if (name === "Agregar")
+          await page
+            .getByLabel("¿Qué dinero estás agregando?")
+            .selectOption("ALLOCATION");
         await page
           .getByLabel(
             name === "Editar total" ? "Nuevo total (USD)" : "Importe (USD)",
@@ -337,6 +341,33 @@ async function main() {
       [21000, 8500, 10500],
     );
     assert.equal((await budget()).actualCash, 37166);
+    await personal
+      .getByRole("button", { name: "Agregar", exact: true })
+      .click();
+    await page.getByLabel("Importe (USD)").fill("40.00");
+    await save("Guardar cambio");
+    await personal.getByRole("button", { name: "Sacar", exact: true }).click();
+    await page.getByLabel("¿Qué quieres registrar?").selectOption("ADJUSTMENT");
+    await page.getByLabel("Importe (USD)").fill("10.00");
+    await save("Guardar cambio");
+    await page
+      .locator('[data-fund="SAVINGS"]')
+      .getByRole("button", { name: "Agregar", exact: true })
+      .click();
+    await page.getByLabel("Importe (USD)").fill("20.00");
+    await save("Guardar cambio");
+    b = await budget();
+    assert.equal(b.extraIncome, 6000);
+    assert.equal(b.extraIncomeSaved, 2000);
+    assert.equal(b.actualCash, 41166);
+    assert.equal(b.categories[1].used, 3000);
+    assert.equal(b.categories[1].extraIncome, 4000);
+    assert.equal(b.categories[2].extraIncome, 2000);
+    assert.equal(b.savingsBalance, 12500);
+    assert.deepEqual(
+      (await snapshot()).funds.map((r: any) => r.balance),
+      [21000, 11500, 12500],
+    );
     await mkdir(".local/prototype", { recursive: true });
     const overflow = async () =>
       assert.equal(
@@ -376,7 +407,8 @@ async function main() {
       .getByLabel("Concepto o motivo")
       .fill("Agregar desde móvil de prueba");
     await save("Guardar cambio");
-    assert.equal((await snapshot()).funds[1].balance, 8600);
+    assert.equal((await snapshot()).funds[1].balance, 11600);
+    assert.equal((await budget()).actualCash, 41266);
     await page
       .getByRole("button", { name: "Registrar gasto", exact: true })
       .click();
