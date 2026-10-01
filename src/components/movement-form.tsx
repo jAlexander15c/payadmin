@@ -50,6 +50,8 @@ export default function MovementForm({
     };
   }, []);
   const r = edit?.record,
+    expenseMode = r?.ledger === "EXPENSES",
+    editPath = expenseMode ? "expense-entry" : edit?.kind,
     statement = d.statements.find((s) => s.period === period);
   const title = voiding
     ? "Anular movimiento"
@@ -80,13 +82,15 @@ export default function MovementForm({
       s = (name: string) => String(f.get(name) || "");
     try {
       if (voiding && edit) {
-        await post(`${edit.kind}/${r!.id}`, {
+        await post(`${editPath}/${r!.id}`, {
           revision: r!.revision,
           action: "void",
           reason: s("reason"),
         });
         await onSaved(
-          "Movimiento anulado. Se recalcularon los períodos afectados.",
+          expenseMode
+            ? "Movimiento anulado. Saldo y consumo actualizados."
+            : "Movimiento anulado. Se recalcularon los períodos afectados.",
         );
         return;
       }
@@ -136,7 +140,7 @@ export default function MovementForm({
       };
       if (kind === "statement") await post("statement", statementBody);
       else if (edit)
-        await post(`${edit.kind}/${r!.id}`, {
+        await post(`${editPath}/${r!.id}`, {
           revision: r!.revision,
           action: "correct",
           reason: s("reason"),
@@ -159,7 +163,9 @@ export default function MovementForm({
       }
       await onSaved(
         edit
-          ? "Corrección guardada con auditoría y recálculo."
+          ? expenseMode
+            ? "Corrección guardada. Saldo y consumo actualizados."
+            : "Corrección guardada con auditoría y recálculo."
           : kind === "contribution"
             ? "Aporte recibido guardado. Todavía no se aplicó al banco."
             : "Registro guardado en PostgreSQL.",
@@ -325,15 +331,28 @@ export default function MovementForm({
                       value={cashKind}
                       onChange={(e) => setCashKind(e.target.value)}
                     >
-                      {[
-                        "PAYROLL",
-                        "INCOME",
-                        "EXPENSE",
-                        "SAVING",
-                        "SAVINGS_OPENING",
-                      ].map((k) => (
+                      {(expenseMode
+                        ? [
+                            "INCOME",
+                            "EXPENSE",
+                            ...(["SAVING", "SAVINGS_OPENING"].includes(r?.kind)
+                              ? [r!.kind]
+                              : []),
+                          ]
+                        : [
+                            "PAYROLL",
+                            "INCOME",
+                            "EXPENSE",
+                            "SAVING",
+                            "SAVINGS_OPENING",
+                          ]
+                      ).map((k) => (
                         <option key={k} value={k}>
-                          {typeNames[k]}
+                          {expenseMode && k === "INCOME"
+                            ? "Entrada"
+                            : expenseMode && k === "EXPENSE"
+                              ? "Salida"
+                              : typeNames[k]}
                         </option>
                       ))}
                     </select>
@@ -350,17 +369,29 @@ export default function MovementForm({
                         ["SAVING", "SAVINGS_OPENING"].includes(cashKind)
                           ? "SAVINGS"
                           : r?.kind === cashKind
-                            ? r?.category || "NEEDS"
-                            : ["PAYROLL", "INCOME"].includes(cashKind)
+                            ? expenseMode &&
+                              ["DEBT", "OTHER"].includes(r?.category)
+                              ? r?.category === "DEBT"
+                                ? "SAVINGS"
+                                : "WANTS"
+                              : r?.category || "NEEDS"
+                            : !expenseMode &&
+                                ["PAYROLL", "INCOME"].includes(cashKind)
                               ? "OTHER"
                               : "NEEDS"
                       }
                     >
-                      <option value="NEEDS">Necesidades</option>
-                      <option value="WANTS">Gustos</option>
-                      <option value="DEBT">Deuda fuera de BG</option>
+                      <option value="NEEDS">
+                        {expenseMode ? "Fijo" : "Necesidades"}
+                      </option>
+                      <option value="WANTS">
+                        {expenseMode ? "Personal" : "Gustos"}
+                      </option>
+                      {!expenseMode && (
+                        <option value="DEBT">Deuda fuera de BG</option>
+                      )}
                       <option value="SAVINGS">Ahorro</option>
-                      <option value="OTHER">Otros</option>
+                      {!expenseMode && <option value="OTHER">Otros</option>}
                     </select>
                   </label>
                 </div>
@@ -400,15 +431,22 @@ export default function MovementForm({
                         name="funding"
                         defaultValue={r?.funding || "CASH"}
                       >
-                        <option value="CASH">Caja personal</option>
+                        <option value="CASH">
+                          {expenseMode
+                            ? "Del apartado elegido"
+                            : "Caja personal"}
+                        </option>
                         <option value="SAVINGS">Ahorros acumulados</option>
                       </select>
                     </label>
                   )}
                   {r?.fixed_expense_id && (
                     <p className="notice">
-                      Este pago está vinculado a un gasto fijo. Conserva «Gasto»
-                      y «Necesidades» para mantener el vínculo.
+                      Este pago está vinculado a un gasto fijo. Conserva{" "}
+                      {expenseMode
+                        ? "«Salida» y «Fijo»"
+                        : "«Gasto» y «Necesidades»"}{" "}
+                      para mantener el vínculo.
                     </p>
                   )}
                   <label>
@@ -422,9 +460,15 @@ export default function MovementForm({
                     />
                   </label>
                   <p className="fine-print">
-                    Planilla: registra el neto que recibiste en efectivo. No
-                    registres aquí nuevamente pagos o reembolsos que ya
-                    guardaste en Banco o Aportes.
+                    {expenseMode ? (
+                      "Este movimiento pertenece a tu control de gastos: conserva el apartado Fijo, Personal o Ahorro."
+                    ) : (
+                      <>
+                        Planilla: registra el neto que recibiste en efectivo. No
+                        registres aquí nuevamente pagos o reembolsos que ya
+                        guardaste en Banco o Aportes.
+                      </>
+                    )}
                   </p>
                 </>
               ) : (

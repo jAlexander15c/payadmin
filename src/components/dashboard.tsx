@@ -34,7 +34,6 @@ import MovementForm from "./movement-form";
 import SettingsForm from "./settings-form";
 import CashCompensations from "./cash-compensations";
 import Expenses from "./expenses";
-import BudgetCategories from "./budget-categories";
 export type Snapshot = Awaited<ReturnType<typeof snapshot>>;
 export const names: Record<Source, string> = {
   chunky: "Chunky Bites",
@@ -258,7 +257,11 @@ export default function Dashboard({
         <main className="content">
           <div className="page-heading">
             <div>
-              <span className="eyebrow">TU PLAN FINANCIERO, CON CLARIDAD</span>
+              <span className="eyebrow">
+                {page === "expenses"
+                  ? "TU CONTROL DE GASTOS"
+                  : "TU PLAN FINANCIERO, CON CLARIDAD"}
+              </span>
               <h1>
                 {page === "overview" ? "Hola, Javier" : title}
                 <span className="heading-dot">.</span>
@@ -266,7 +269,9 @@ export default function Dashboard({
               <p>
                 {page === "overview"
                   ? "Consulta tu saldo y registra tus pagos y aportes."
-                  : "Información trazable para tomar decisiones con tus números."}
+                  : page === "expenses"
+                    ? "Controla lo que entra, lo que sale y tus gastos fijos."
+                    : "Información trazable para tomar decisiones con tus números."}
               </p>
             </div>
             <div className="heading-actions">
@@ -274,28 +279,21 @@ export default function Dashboard({
                 className="button secondary export-main"
                 href={
                   page === "expenses"
-                    ? "/api/export?kind=budget"
+                    ? "/api/export?kind=expenses"
                     : "/api/export"
                 }
               >
                 <Download size={16} />
                 Exportar
               </a>
-              <button
-                className="button primary"
-                onClick={() =>
-                  page === "expenses" ? go("budget") : setForm("bank")
-                }
-              >
-                {page === "expenses" ? (
-                  <ArrowUpRight size={18} />
-                ) : (
-                  <Plus size={18} />
-                )}
-                {page === "expenses"
-                  ? "Ver presupuesto"
-                  : "Registrar movimiento"}
-              </button>
+              {page !== "expenses" && (
+                <button
+                  className="button primary"
+                  onClick={() => setForm("bank")}
+                >
+                  <Plus size={18} /> Registrar movimiento
+                </button>
+              )}
             </div>
           </div>
           {page === "overview" && (
@@ -1803,11 +1801,6 @@ function Budget({ d, open }: { d: Snapshot; open: () => void }) {
             <div>
               <small>Otros ingresos recibidos</small>
               <strong>{usd(b.otherIncome)}</strong>
-              {b.extraIncome > 0 && (
-                <small>
-                  Incluye {usd(b.extraIncome)} de ingresos extra en Mis totales
-                </small>
-              )}
             </div>
             <div>
               <small>Gastos de caja registrados</small>
@@ -1836,8 +1829,7 @@ function Budget({ d, open }: { d: Snapshot; open: () => void }) {
                 0,
               ),
             )}
-            . Los ingresos extra, aportes y ajustes de saldo se muestran por
-            separado y no cambian estos porcentajes.
+            . Los ingresos de caja y los aportes no cambian estos porcentajes.
           </p>
           {distribution.map((x) => (
             <div className="budget-category" key={x.name}>
@@ -1876,7 +1868,6 @@ function Budget({ d, open }: { d: Snapshot; open: () => void }) {
           </div>
         </section>
       </div>
-      <BudgetCategories b={b} />
       <section className="panel section-gap">
         <div className="panel-heading">
           <h2>Aportes: esperado, recibido y pendiente</h2>

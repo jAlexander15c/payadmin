@@ -23,6 +23,24 @@ type BudgetData = {
   fixedExpenses?: Row[];
   fundAdjustments?: Row[];
 };
+// Loan pages have their own cash ledger. Spending balances, fixed commitments
+// and manual fund adjustments belong exclusively to Mis gastos.
+export function loanBudgetFor(
+  d: BudgetData,
+  period: string,
+  half: "1" | "2" | "all",
+) {
+  return budgetFor(
+    {
+      ...d,
+      cash: d.cash.filter((r) => r.ledger !== "EXPENSES"),
+      fixedExpenses: [],
+      fundAdjustments: [],
+    },
+    period,
+    half,
+  );
+}
 export function fixedExpensesAt(versions: Row[], period: string) {
   const latest = new Map<string, Row>();
   for (const v of [...versions].sort((a, b) =>

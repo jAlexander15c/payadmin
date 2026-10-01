@@ -9,7 +9,8 @@ import {
   correctRecord,
   snapshot,
 } from "../../src/lib/store";
-import { budgetFor } from "../../src/lib/budget";
+import { expensesFor } from "../../src/lib/expenses";
+import { loanBudgetFor } from "../../src/lib/budget";
 const user = randomUUID(),
   clock = "2026-10-30";
 let fixedId = "";
@@ -62,7 +63,7 @@ after(async () => {
 });
 test("Gastos PostgreSQL: pagos parciales, reintentos, correcciones, vigencias y ahorro", async (t) => {
   await t.test(
-    "Configurar un fijo reserva presupuesto y no crea pagos",
+    "Configurar un fijo aparece en el control de gastos sin alterar el presupuesto del préstamo",
     async () => {
       const raw = config();
       const all = await Promise.all(
@@ -72,9 +73,11 @@ test("Gastos PostgreSQL: pagos parciales, reintentos, correcciones, vigencias y 
       assert.ok(all.every((r) => r.id === fixedId));
       assert.equal(all.filter((r) => !r.duplicate).length, 1);
       const d = await snapshot(clock);
-      assert.equal(d.cash.length, 0);
-      assert.equal(budgetFor(d, "2026-10", "all").fixedPending, 4000);
+      assert.equal(d.expenseCash.length, 0);
+      assert.equal(expensesFor(d, "2026-10", "all").fixedPending, 4000);
       assert.equal(d.real.paid, 0);
+      assert.equal(loanBudgetFor(d, "2026-10", "all").spent, 0);
+      assert.equal(loanBudgetFor(d, "2026-10", "all").fixedPending, 0);
       await assert.rejects(
         () => saveFixedExpense({ ...raw, amount: "50.00" }, user),
         /datos distintos/,
@@ -87,26 +90,30 @@ test("Gastos PostgreSQL: pagos parciales, reintentos, correcciones, vigencias y 
     async () => {
       const raw = cash();
       const rows = await Promise.all(
-        Array.from({ length: 5 }, () => createRecord("cash", raw, user, clock)),
+        Array.from({ length: 5 }, () =>
+          createRecord("expense", raw, user, clock),
+        ),
       );
       payment = rows[0].id;
       assert.ok(rows.every((r) => r.id === payment));
       assert.equal(rows.filter((r) => !r.duplicate).length, 1);
       const d = await snapshot(clock),
-        b = budgetFor(d, "2026-10", "all");
+        b = expensesFor(d, "2026-10", "all");
       assert.equal(b.fixed[0].paid, 1000);
       assert.equal(b.fixedPending, 3000);
       assert.equal(b.spent, 1000);
       assert.equal(d.real.paid, 0);
+      assert.equal(loanBudgetFor(d, "2026-10", "all").spent, 0);
+      assert.equal(loanBudgetFor(d, "2026-10", "all").fixedPending, 0);
     },
   );
   await t.test(
     "Corregir y anular restaura caja, reserva y auditoría",
     async () => {
       const d = await snapshot(clock),
-        r = d.cash.find((r) => r.id === payment)!;
+        r = d.expenseCash.find((r) => r.id === payment)!;
       await correctRecord(
-        "cash",
+        "expense",
         payment,
         {
           revision: r.revision,
@@ -117,23 +124,23 @@ test("Gastos PostgreSQL: pagos parciales, reintentos, correcciones, vigencias y 
         user,
         clock,
       );
-      let b = budgetFor(await snapshot(clock), "2026-10", "all");
+      let b = expensesFor(await snapshot(clock), "2026-10", "all");
       assert.equal(b.spent, 2000);
       assert.equal(b.fixedPending, 2000);
       await correctRecord(
-        "cash",
+        "expense",
         payment,
         { revision: 2, action: "void", reason: "Pago de prueba anulado" },
         user,
         clock,
       );
-      b = budgetFor(await snapshot(clock), "2026-10", "all");
+      b = expensesFor(await snapshot(clock), "2026-10", "all");
       assert.equal(b.spent, 0);
       assert.equal(b.fixedPending, 4000);
       assert.equal(
         (
           await database().query(
-            "SELECT count(*)::int AS n FROM audit_log WHERE entity='cash' AND entity_id=$1",
+            "SELECT count(*)::int AS n FROM audit_log WHERE entity='expense' AND entity_id=$1",
             [payment],
           )
         ).rows[0].n,
@@ -145,7 +152,7 @@ test("Gastos PostgreSQL: pagos parciales, reintentos, correcciones, vigencias y 
     "Ahorro separado y gastos desde ahorro no duplican salida de caja",
     async () => {
       await createRecord(
-        "cash",
+        "expense",
         {
           ...cash("100.00"),
           kind: "SAVINGS_OPENING",
@@ -157,7 +164,7 @@ test("Gastos PostgreSQL: pagos parciales, reintentos, correcciones, vigencias y 
         clock,
       );
       await createRecord(
-        "cash",
+        "expense",
         {
           ...cash("20.00"),
           kind: "SAVING",
@@ -169,7 +176,7 @@ test("Gastos PostgreSQL: pagos parciales, reintentos, correcciones, vigencias y 
         clock,
       );
       await createRecord(
-        "cash",
+        "expense",
         {
           ...cash("30.00"),
           funding: "SAVINGS",
@@ -180,15 +187,15 @@ test("Gastos PostgreSQL: pagos parciales, reintentos, correcciones, vigencias y 
         user,
         clock,
       );
-      const b = budgetFor(await snapshot(clock), "2026-10", "all");
-      assert.equal(b.actualCash, -2000);
-      assert.equal(b.savingsBalance, 9000);
-      assert.equal(b.categories[1].used, 0);
-      assert.equal(b.categories[2].used, 2000);
+      const b = expensesFor(await snapshot(clock), "2026-10", "all");
+      assert.equal(b.net, -3000);
+      assert.equal((await snapshot(clock)).funds[2].balance, 9000);
+      assert.equal(b.categories[1].spent, 0);
+      assert.equal(b.categories[2].spent, 3000);
       await assert.rejects(
         () =>
           createRecord(
-            "cash",
+            "expense",
             {
               ...cash(),
               funding: "SAVINGS",
@@ -202,13 +209,18 @@ test("Gastos PostgreSQL: pagos parciales, reintentos, correcciones, vigencias y 
       );
       await assert.rejects(
         () =>
-          createRecord("cash", { ...cash(), date: "2026-10-31" }, user, clock),
+          createRecord(
+            "expense",
+            { ...cash(), date: "2026-10-31" },
+            user,
+            clock,
+          ),
         /fecha futura/,
       );
       await assert.rejects(
         () =>
           createRecord(
-            "cash",
+            "expense",
             { ...cash(), fixedExpenseId: randomUUID() },
             user,
             clock,
@@ -234,8 +246,8 @@ test("Gastos PostgreSQL: pagos parciales, reintentos, correcciones, vigencias y 
         user,
       );
       const d = await snapshot(clock);
-      assert.equal(budgetFor(d, "2026-10", "all").fixedPending, 4000);
-      assert.equal(budgetFor(d, "2026-11", "all").fixedPending, 5000);
+      assert.equal(expensesFor(d, "2026-10", "all").fixedPending, 4000);
+      assert.equal(expensesFor(d, "2026-11", "all").fixedPending, 5000);
       await assert.rejects(
         () =>
           saveFixedExpense(
@@ -255,12 +267,17 @@ test("Gastos PostgreSQL: pagos parciales, reintentos, correcciones, vigencias y 
         user,
       );
       assert.equal(
-        budgetFor(await snapshot(clock), "2026-12", "all").fixed.length,
+        expensesFor(await snapshot(clock), "2026-12", "all").fixed.length,
         0,
       );
       await assert.rejects(
         () =>
-          createRecord("cash", { ...cash(), period: "2026-09" }, user, clock),
+          createRecord(
+            "expense",
+            { ...cash(), period: "2026-09" },
+            user,
+            clock,
+          ),
         /no está activo/,
       );
     },

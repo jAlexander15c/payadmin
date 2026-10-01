@@ -9,7 +9,8 @@ import {
   correctRecord,
   snapshot,
 } from "../../src/lib/store";
-import { budgetFor } from "../../src/lib/budget";
+import { expensesFor } from "../../src/lib/expenses";
+import { loanBudgetFor } from "../../src/lib/budget";
 const user = randomUUID(),
   clock = "2026-10-20";
 const input = (
@@ -68,6 +69,8 @@ test("Totales PostgreSQL: idempotencia, gastos, saldo cero y edición concurrent
       assert.equal(d.cash.length, 0);
       assert.equal(d.initialBudget.income, 0);
       assert.equal(d.real.paid, 0);
+      assert.equal(loanBudgetFor(d, "2026-10", "all").income, 0);
+      assert.equal(loanBudgetFor(d, "2026-10", "all").spent, 0);
       await assert.rejects(
         () => adjustFund({ ...body, amount: "200.00" }, user, clock),
         /datos distintos/,
@@ -75,24 +78,24 @@ test("Totales PostgreSQL: idempotencia, gastos, saldo cero y edición concurrent
     },
   );
   await t.test(
-    "Agregar y sacar actualiza el saldo y consume presupuesto una vez",
+    "Agregar y sacar actualiza el saldo y registra una salida una vez dentro de Mis gastos",
     async () => {
       await adjustFund(input("NEEDS", "ADD", "20.00", 10000), user, clock);
       await adjustFund(input("NEEDS", "REMOVE", "15.00", 12000), user, clock);
       const d = await snapshot(clock),
-        b = budgetFor(d, "2026-10", "all");
+        b = expensesFor(d, "2026-10", "all");
       assert.equal(d.funds[0].balance, 10500);
       assert.equal(b.income, 0);
       assert.equal(b.spent, 1500);
-      assert.equal(b.actualCash, -1500);
-      assert.equal(b.categories[0].used, 1500);
+      assert.equal(b.net, -1500);
+      assert.equal(b.categories[0].spent, 1500);
     },
   );
   await t.test(
     "Un gasto existente descuenta fondos y su anulación los devuelve",
     async () => {
       const r = await createRecord(
-        "cash",
+        "expense",
         {
           requestKey: randomUUID(),
           date: clock,
@@ -107,7 +110,7 @@ test("Totales PostgreSQL: idempotencia, gastos, saldo cero y edición concurrent
       );
       assert.equal((await snapshot(clock)).funds[0].balance, 10000);
       await correctRecord(
-        "cash",
+        "expense",
         r.id,
         { revision: 1, action: "void", reason: "Anular gasto de prueba" },
         user,
@@ -140,7 +143,7 @@ test("Totales PostgreSQL: idempotencia, gastos, saldo cero y edición concurrent
     "Ahorro conserva depósitos existentes, edición y retiro sin duplicar caja",
     async () => {
       await createRecord(
-        "cash",
+        "expense",
         {
           requestKey: randomUUID(),
           date: clock,
@@ -157,12 +160,10 @@ test("Totales PostgreSQL: idempotencia, gastos, saldo cero y edición concurrent
       await adjustFund(input("SAVINGS", "ADD", "10.00", 20000), user, clock);
       await adjustFund(input("SAVINGS", "REMOVE", "30.00", 21000), user, clock);
       const d = await snapshot(clock),
-        b = budgetFor(d, "2026-10", "all");
+        b = expensesFor(d, "2026-10", "all");
       assert.equal(d.funds[2].balance, 18000);
-      assert.equal(b.savingsBalance, 18000);
-      assert.equal(b.savingsSpent, 3000);
-      assert.equal(b.actualCash, -1500);
-      assert.equal(b.categories[2].used, 0);
+      assert.equal(b.categories[2].spent, 3000);
+      assert.equal(b.net, -4500);
       assert.ok(
         d.fundAdjustments.every(
           (r) =>
@@ -184,7 +185,7 @@ test("Totales PostgreSQL: idempotencia, gastos, saldo cero y edición concurrent
   await t.test(
     "Ingreso extra y ajuste por gastos anteriores se distinguen sin obligar a reconstruirlos",
     async () => {
-      const baseline = budgetFor(await snapshot(clock), "2026-10", "all");
+      const baseline = expensesFor(await snapshot(clock), "2026-10", "all");
       const raw = {
         ...input("WANTS", "ADD", "50.00", 0),
         effect: "INCOME",
@@ -205,13 +206,13 @@ test("Totales PostgreSQL: idempotencia, gastos, saldo cero y edición concurrent
         clock,
       );
       const d = await snapshot(clock),
-        b = budgetFor(d, "2026-10", "all");
+        b = expensesFor(d, "2026-10", "all");
       assert.equal(d.funds[1].balance, 3000);
       assert.equal(b.income, baseline.income + 5000);
       assert.equal(b.spent, baseline.spent);
-      assert.equal(b.actualCash, baseline.actualCash + 5000);
-      assert.equal(b.categories[1].extraIncome, 5000);
-      assert.equal(b.categories[1].used, 0);
+      assert.equal(b.net, baseline.net + 5000);
+      assert.equal(b.categories[1].income, 5000);
+      assert.equal(b.categories[1].spent, 0);
       assert.ok(
         d.fundAdjustments
           .filter((r) => r.bucket === "WANTS")
@@ -227,12 +228,13 @@ test("Totales PostgreSQL: idempotencia, gastos, saldo cero y edición concurrent
         user,
         clock,
       );
-      const next = budgetFor(await snapshot(clock), "2026-10", "all");
-      assert.equal(next.savingsBalance, 18500);
-      assert.equal(next.actualCash, b.actualCash);
+      const final = await snapshot(clock);
+      const next = expensesFor(final, "2026-10", "all");
+      assert.equal(final.funds[2].balance, 18500);
+      assert.equal(next.net, b.net + 1000);
       assert.equal(next.spent, b.spent);
-      assert.equal(next.savingsSpent, b.savingsSpent);
-      assert.equal(next.extraIncomeSaved, 1000);
+      assert.equal(next.categories[2].spent, b.categories[2].spent);
+      assert.equal(next.categories[2].income, 1000);
       await assert.rejects(
         () =>
           adjustFund(

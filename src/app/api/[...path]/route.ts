@@ -15,7 +15,8 @@ import {
   adjustFund,
 } from "@/lib/store";
 import { period, simulationInput } from "@/lib/validation";
-import { budgetFor } from "@/lib/budget";
+import { loanBudgetFor } from "@/lib/budget";
+import { expensesFor } from "@/lib/expenses";
 import { fundEffect, fundEffectNames } from "@/lib/funds";
 import { cents, money, simulate } from "@/lib/finance";
 import { registerInitialUser } from "@/lib/initial-registration";
@@ -66,7 +67,13 @@ export async function GET(req: Request, ctx: Context) {
       const url = new URL(req.url),
         p = period.parse(url.searchParams.get("period")),
         half = z.enum(["1", "2", "all"]).parse(url.searchParams.get("half"));
-      return response(budgetFor(data, p, half));
+      return response(loanBudgetFor(data, p, half));
+    }
+    if (path === "expenses") {
+      const url = new URL(req.url),
+        p = period.parse(url.searchParams.get("period")),
+        half = z.enum(["1", "2", "all"]).parse(url.searchParams.get("half"));
+      return response(expensesFor(data, p, half));
     }
     if (path === "export") {
       const kind = new URL(req.url).searchParams.get("kind") || "movements";
@@ -214,7 +221,7 @@ export async function GET(req: Request, ctx: Context) {
             r.reason,
           ]),
         ];
-      else if (kind === "budget")
+      else if (kind === "budget" || kind === "expenses")
         rows = [
           [
             "ID",
@@ -228,7 +235,7 @@ export async function GET(req: Request, ctx: Context) {
             "Origen de fondos",
             "Gasto fijo ID",
           ],
-          ...data.cash.map((x) => [
+          ...(kind === "expenses" ? data.expenseCash : data.cash).map((x) => [
             x.id,
             x.date,
             x.period,
@@ -240,7 +247,7 @@ export async function GET(req: Request, ctx: Context) {
             x.funding,
             x.fixed_expense_id,
           ]),
-          ...data.fundAdjustments
+          ...(kind === "expenses" ? data.fundAdjustments : [])
             .filter((x) => ["EXPENSE", "INCOME"].includes(fundEffect(x)))
             .map((x) => [
               x.id,
@@ -342,6 +349,12 @@ export async function POST(req: Request, ctx: Context) {
       return response({ ok: true });
     }
     const user = await requireUser();
+    if (path[0] === "expense-entry") {
+      if (path.length === 1)
+        return response(await createRecord("expense", raw, user.id), 201);
+      if (path.length === 2 && z.uuid().safeParse(path[1]).success)
+        return response(await correctRecord("expense", path[1], raw, user.id));
+    }
     if (path.join("/") === "logout") {
       await logout();
       return response({ ok: true });

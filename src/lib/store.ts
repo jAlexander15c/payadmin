@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { database, transaction } from "./db";
 import { HttpError } from "./auth";
-import { budgetFor } from "./budget";
+import { loanBudgetFor } from "./budget";
 import {
   bankInput,
   cashInput,
@@ -156,7 +156,8 @@ export async function readData(c: Queryable = database()) {
     rawMovements: m.rows,
     contributions: r.rows,
     links: links.rows,
-    cash: cash.rows,
+    cash: cash.rows.filter((r) => r.ledger === "BUDGET"),
+    expenseCash: cash.rows.filter((r) => r.ledger === "EXPENSES"),
     participants: participants.rows,
     composition: costs.rows,
     history: history.rows,
@@ -412,7 +413,7 @@ export async function snapshot(asOf = panamaToday()) {
     return {
       ...data,
       ...model,
-      initialBudget: budgetFor({ ...data, ...model }, budgetPeriod, "1"),
+      initialBudget: loanBudgetFor({ ...data, ...model }, budgetPeriod, "1"),
       asOf,
       parameters: p,
       controls,
@@ -426,7 +427,10 @@ export async function snapshot(asOf = panamaToday()) {
         linked,
       },
       database: "connected",
-      funds: fundBalances(data, asOf),
+      funds: fundBalances(
+        { cash: data.expenseCash, fundAdjustments: data.fundAdjustments },
+        asOf,
+      ),
     };
   });
 }
@@ -508,9 +512,10 @@ export async function adjustFund(
       return { id: previous.rows[0].id, duplicate: true };
     }
     const data = await readData(c),
-      before = fundBalances(data, today).find(
-        (r) => r.id === v.bucket,
-      )!.balance;
+      before = fundBalances(
+        { cash: data.expenseCash, fundAdjustments: data.fundAdjustments },
+        today,
+      ).find((r) => r.id === v.bucket)!.balance;
     if (v.operation === "SET" && before !== v.expectedBalance)
       throw new HttpError(
         409,
@@ -737,7 +742,7 @@ async function materialize(c: PoolClient, today: string) {
     throw new Error("Fallo de reconciliación financiera.");
 }
 export async function createRecord(
-  kind: "bank" | "contribution" | "cash",
+  kind: "bank" | "contribution" | "cash" | "expense",
   raw: unknown,
   user: string,
   today = panamaToday(),
@@ -756,13 +761,24 @@ export async function createRecord(
           ? "contributions"
           : "cash_entries";
     const existing = await c.query(
-      `SELECT id FROM ${table} WHERE request_key=$1`,
+      `SELECT * FROM ${table} WHERE request_key=$1`,
       [parsed.requestKey],
     );
     if (existing.rowCount) {
+      if (
+        (kind === "cash" || kind === "expense") &&
+        existing.rows[0].ledger !== (kind === "expense" ? "EXPENSES" : "BUDGET")
+      )
+        throw new HttpError(
+          409,
+          "Este identificador pertenece a otro apartado.",
+        );
       const creation = await c.query(
-        "SELECT after_data FROM audit_log WHERE entity=$1 AND entity_id=$2 AND action='create' ORDER BY id LIMIT 1",
-        [kind, existing.rows[0].id],
+        "SELECT after_data FROM audit_log WHERE entity=ANY($1::text[]) AND entity_id=$2 AND action='create' ORDER BY id LIMIT 1",
+        [
+          kind === "expense" ? ["expense", "cash"] : [kind],
+          existing.rows[0].id,
+        ],
       );
       if (
         JSON.stringify(creation.rows[0]?.after_data) !==
@@ -781,13 +797,11 @@ export async function createRecord(
       }
       return { id: existing.rows[0].id, duplicate: true };
     }
-    const versions = (await readData(c)).versions;
-    realDate(
-      parsed.date,
-      parsed.period,
-      kind === "bank" ? versions[0].firstDue.slice(0, 7) : "2000-01",
-      today,
-    );
+    const start =
+      kind === "bank"
+        ? (await readData(c)).versions[0].firstDue.slice(0, 7)
+        : "2000-01";
+    realDate(parsed.date, parsed.period, start, today);
     const id = randomUUID();
     if (kind === "bank") {
       const v = bankInput.parse(raw);
@@ -835,9 +849,18 @@ export async function createRecord(
       );
     } else {
       const v = cashInput.parse(raw);
+      if (
+        kind === "expense" &&
+        (v.kind === "PAYROLL" ||
+          !["NEEDS", "WANTS", "SAVINGS"].includes(v.category))
+      )
+        throw new HttpError(
+          400,
+          "En Mis gastos elige una entrada o salida y Fijo, Personal o Ahorro.",
+        );
       await validateFixedPayment(c, v);
       await c.query(
-        "INSERT INTO cash_entries(id,request_key,occurred_on,period,kind,category,amount,concept,created_by,funding,fixed_expense_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+        "INSERT INTO cash_entries(id,request_key,occurred_on,period,kind,category,amount,concept,created_by,funding,fixed_expense_id,ledger) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
         [
           id,
           v.requestKey,
@@ -850,6 +873,7 @@ export async function createRecord(
           user,
           v.funding,
           v.fixedExpenseId,
+          kind === "expense" ? "EXPENSES" : "BUDGET",
         ],
       );
     }
@@ -863,7 +887,7 @@ export async function createRecord(
       parsed,
       "Registro de movimiento real",
     );
-    await materialize(c, today);
+    if (kind !== "expense") await materialize(c, today);
     return { id, duplicate: false };
   });
 }
@@ -975,7 +999,7 @@ export async function correctCashCompensation(
   });
 }
 export async function correctRecord(
-  kind: "bank" | "contribution" | "cash",
+  kind: "bank" | "contribution" | "cash" | "expense",
   id: string,
   raw: unknown,
   user: string,
@@ -995,6 +1019,11 @@ export async function correctRecord(
       ),
       before = result.rows[0];
     if (!before) throw new HttpError(404, "Movimiento inexistente.");
+    if (
+      (kind === "cash" || kind === "expense") &&
+      before.ledger !== (kind === "expense" ? "EXPENSES" : "BUDGET")
+    )
+      throw new HttpError(404, "El movimiento pertenece a otro apartado.");
     if (before.revision !== v.revision)
       throw new HttpError(
         409,
@@ -1014,7 +1043,10 @@ export async function correctRecord(
           : kind === "contribution"
             ? contributionInput.parse(v.data)
             : cashInput.parse(v.data);
-      const start = (await readData(c)).versions[0].firstDue.slice(0, 7);
+      const start =
+        kind === "bank"
+          ? (await readData(c)).versions[0].firstDue.slice(0, 7)
+          : "2000-01";
       realDate(
         parsed.date,
         parsed.period,
@@ -1055,6 +1087,15 @@ export async function correctRecord(
         );
       } else {
         const b = cashInput.parse(v.data);
+        if (
+          kind === "expense" &&
+          (b.kind === "PAYROLL" ||
+            !["NEEDS", "WANTS", "SAVINGS"].includes(b.category))
+        )
+          throw new HttpError(
+            400,
+            "En Mis gastos elige una entrada o salida y Fijo, Personal o Ahorro.",
+          );
         await validateFixedPayment(c, b);
         await c.query(
           "UPDATE cash_entries SET occurred_on=$2,period=$3,kind=$4,category=$5,amount=$6,concept=$7,funding=$8,fixed_expense_id=$9,revision=revision+1 WHERE id=$1",
@@ -1075,7 +1116,7 @@ export async function correctRecord(
     const after = (await c.query(`SELECT * FROM ${table} WHERE id=$1`, [id]))
       .rows[0];
     await audit(c, user, kind, id, v.action, before, after, v.reason);
-    await materialize(c, today);
+    if (kind !== "expense") await materialize(c, today);
     return { id };
   });
 }

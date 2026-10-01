@@ -1,13 +1,14 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Plus, X, Info, Pencil, Download } from "lucide-react";
-import { budgetFor, fixedExpensesAt } from "@/lib/budget";
+import { fixedExpensesAt } from "@/lib/budget";
+import { expensesFor, expenseBucketNames } from "@/lib/expenses";
 import { cents } from "@/lib/finance";
-import { type Snapshot, usd, displayDate, typeNames } from "./dashboard";
-import BudgetCategories from "./budget-categories";
+import { type Snapshot, usd, displayDate } from "./dashboard";
 import FundTotals from "./fund-totals";
+import ExpenseCharts from "./expense-charts";
 type Row = Record<string, any>;
-type Form = { type: "fixed" | "expense" | "saving"; item?: Row };
+type Form = { type: "fixed" | "expense" | "income"; item?: Row };
 export default function Expenses({
   d,
   onSaved,
@@ -19,25 +20,15 @@ export default function Expenses({
 }) {
   const [period, setPeriod] = useState(d.asOf.slice(0, 7)),
     [half, setHalf] = useState<"1" | "2" | "all">("all"),
-    [tab, setTab] = useState("fixed"),
+    [tab, setTab] = useState("all"),
     [form, setForm] = useState<Form | null>(null);
-  const b = budgetFor(d, period, half);
+  const b = expensesFor(d, period, half);
   const configs = fixedExpensesAt(d.fixedExpenses, period);
-  const entries = d.cash.filter(
+  const shown = b.records.filter(
     (r) =>
-      r.date.slice(0, 7) === period &&
-      (half === "all" ||
-        (Number(r.date.slice(8)) <= 15 ? "1" : "2") === half) &&
-      ["EXPENSE", "SAVING", "SAVINGS_OPENING"].includes(r.kind),
-  );
-  const shown = entries.filter((r) =>
-    tab === "fixed"
-      ? r.fixed_expense_id
-      : tab === "personal"
-        ? !r.fixed_expense_id && r.funding !== "SAVINGS" && r.kind === "EXPENSE"
-        : r.funding === "SAVINGS" ||
-          ["SAVING", "SAVINGS_OPENING"].includes(r.kind) ||
-          r.category === "SAVINGS",
+      tab === "all" ||
+      r.bucket ===
+        { fixed: "NEEDS", personal: "WANTS", savings: "SAVINGS" }[tab],
   );
   return (
     <>
@@ -68,6 +59,12 @@ export default function Expenses({
           ))}
         </div>
         <button
+          className="button secondary"
+          onClick={() => setForm({ type: "income" })}
+        >
+          <Plus size={16} /> Registrar ingreso
+        </button>
+        <button
           className="button primary"
           onClick={() => setForm({ type: "expense" })}
         >
@@ -75,46 +72,24 @@ export default function Expenses({
           Registrar gasto
         </button>
       </div>
-      <FundTotals d={d} onSaved={onSaved} />
-      <BudgetCategories b={b} />
-      <div className="expense-summary section-gap">
-        <section className="panel">
-          <small>Caja real del período</small>
-          <h2>{usd(b.actualCash)}</h2>
-          <p className="fine-print">
-            Ingresos y aportes recibidos, menos gastos de caja, ahorro separado
-            y extras BG.
-          </p>
-        </section>
-        <section className="panel">
-          <small>Ahorro acumulado registrado</small>
-          <h2 className={b.savingsBalance < 0 ? "expense-negative" : ""}>
-            {usd(b.savingsBalance)}
-          </h2>
-          <p className="fine-print">
-            Saldo al cierre del período seleccionado: {usd(b.savingsBefore)}{" "}
-            previo + {usd(b.savingsOpening)} saldo incorporado + {usd(b.saving)}{" "}
-            ahorrado + {usd(b.savingsAdjustment)} ajustes −{" "}
-            {usd(b.savingsSpent)} gastado/retirado.
-          </p>
-          <button
-            className="text-button"
-            onClick={() => setForm({ type: "saving" })}
-          >
-            <Plus size={16} />
-            Registrar ahorro o saldo previo
-          </button>
-        </section>
+      <div className="metrics-grid section-gap">
+        {[
+          ["Entradas del período", b.income],
+          ["Salidas del período", b.spent],
+          ["Balance de movimientos", b.net],
+          ["Gastos fijos pendientes", b.fixedPending],
+        ].map(([name, value]) => (
+          <section className="panel" key={String(name)}>
+            <small>{name}</small>
+            <h2>{usd(Number(value))}</h2>
+          </section>
+        ))}
       </div>
-      {b.savingsBalance < 0 && (
-        <p className="warning" role="status">
-          <Info size={17} />
-          Las salidas superan el ahorro registrado. Registra el saldo previo que
-          tenías o revisa los movimientos.
-        </p>
-      )}
+      <FundTotals d={d} onSaved={onSaved} />
+      <ExpenseCharts b={b} />
       <div className="tabs section-gap">
         {[
+          ["all", "Todos los movimientos"],
           ["fixed", "Gastos fijos"],
           ["personal", "Personal y variables"],
           ["savings", "Ahorro"],
@@ -128,7 +103,7 @@ export default function Expenses({
           </button>
         ))}
       </div>
-      {tab === "fixed" && (
+      {(tab === "fixed" || tab === "all") && (
         <section className="panel section-gap">
           <div className="panel-heading">
             <div>
@@ -224,13 +199,15 @@ export default function Expenses({
       <section className="panel section-gap">
         <div className="panel-heading">
           <h2>
-            {tab === "fixed"
-              ? "Pagos de gastos fijos"
-              : tab === "personal"
-                ? "Gastos personales y variables"
-                : "Movimientos de ahorro"}
+            {tab === "all"
+              ? "Entradas y salidas"
+              : tab === "fixed"
+                ? "Movimientos de Fijo"
+                : tab === "personal"
+                  ? "Gastos personales y variables"
+                  : "Movimientos de ahorro"}
           </h2>
-          <a className="text-button" href="/api/export?kind=budget">
+          <a className="text-button" href="/api/export?kind=expenses">
             <Download size={16} />
             CSV
           </a>
@@ -244,7 +221,8 @@ export default function Expenses({
                 <tr>
                   <th>Fecha</th>
                   <th>Concepto</th>
-                  <th>Categoría / origen</th>
+                  <th>Tipo</th>
+                  <th>Apartado</th>
                   <th>Importe</th>
                   <th>Estado</th>
                   <th>Acciones</th>
@@ -257,35 +235,28 @@ export default function Expenses({
                       {displayDate(r.date)}
                       <small>Mes asignado: {r.period}</small>
                     </td>
+                    <td>{r.concept}</td>
                     <td>
-                      {r.concept}
-                      <small>{typeNames[r.kind]}</small>
+                      {r.direction === "IN"
+                        ? "Entrada"
+                        : r.direction === "OUT"
+                          ? "Salida"
+                          : "Saldo incorporado"}
                     </td>
-                    <td>
-                      {
-                        {
-                          NEEDS: "Necesidades",
-                          WANTS: "Personal",
-                          SAVINGS: "Ahorro",
-                          DEBT: "Deuda",
-                          OTHER: "Otros",
-                        }[r.category as "NEEDS"]
-                      }
-                      <small>
-                        {r.kind === "SAVINGS_OPENING"
-                          ? "Saldo previo, fuera de caja"
-                          : r.funding === "SAVINGS"
-                            ? "Desde ahorro acumulado"
-                            : "Desde caja personal"}
-                      </small>
-                    </td>
-                    <td>{usd(cents(r.amount))}</td>
+                    <td>{expenseBucketNames[r.bucket]}</td>
+                    <td>{usd(r.amount)}</td>
                     <td>{r.status === "active" ? "Registrado" : "Anulado"}</td>
                     <td>
-                      {r.status === "active" && (
-                        <button className="text-button" onClick={() => edit(r)}>
+                      {r.status === "active" && r.source === "entry" && (
+                        <button
+                          className="text-button"
+                          onClick={() => edit(r.record)}
+                        >
                           Corregir / anular
                         </button>
+                      )}
+                      {r.source === "fund" && (
+                        <small>Registrado en Mis totales</small>
                       )}
                     </td>
                   </tr>
@@ -295,9 +266,9 @@ export default function Expenses({
           </div>
         )}
         <p className="fine-print">
-          Los registros se comparten con Mi presupuesto y Movimientos. No
-          vuelvas a ingresarlos allí. Un gasto no reduce el capital del
-          préstamo.
+          Entradas, salidas y saldos de este apartado pertenecen a tu control de
+          gastos. El balance del período solo incluye movimientos registrados;
+          tus saldos actuales también incluyen los ajustes de Mis totales.
         </p>
       </section>
       {form && (
@@ -332,11 +303,8 @@ function ExpenseForm({
     key = useRef(crypto.randomUUID());
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [category, setCategory] = useState(
-      form.item ? "NEEDS" : form.type === "saving" ? "SAVINGS" : "WANTS",
-    ),
+    [category, setCategory] = useState(form.item ? "NEEDS" : "WANTS"),
     [funding, setFunding] = useState("CASH"),
-    [kind, setKind] = useState("SAVING"),
     [date, setDate] = useState(d.asOf),
     [amount, setAmount] = useState(
       form.type === "fixed"
@@ -354,32 +322,19 @@ function ExpenseForm({
       document.body.style.overflow = previous;
     };
   }, []);
-  const b = budgetFor(
-    d,
-    date.slice(0, 7),
-    Number(date.slice(8)) <= 15 ? "1" : "2",
-  );
-  const monthly = budgetFor(d, date.slice(0, 7), "all");
-  const c = b.categories.find((c) => c.id === category);
   const entered = /^\d{1,8}(\.\d{1,2})?$/.test(amount) ? cents(amount) : 0;
+  const bucket =
+    form.type === "expense" && funding === "SAVINGS" ? "SAVINGS" : category;
+  const currentBalance = d.funds.find((r) => r.id === bucket)?.balance || 0;
   const prospective =
-    funding === "SAVINGS"
-      ? monthly.savingsBalance - entered
-      : (c?.remaining || 0) -
-        entered +
-        (form.item &&
-        form.type === "expense" &&
-        paymentPeriod === date.slice(0, 7)
-          ? b.fixed.find((r) => r.fixed_id === form.item?.fixed_id)?.pending ||
-            0
-          : 0);
+    currentBalance + (form.type === "income" ? entered : -entered);
   const title =
     form.type === "fixed"
       ? form.item
         ? "Editar gasto fijo"
         : "Definir gasto fijo"
-      : form.type === "saving"
-        ? "Registrar ahorro"
+      : form.type === "income"
+        ? "Registrar ingreso"
         : "Registrar pago o gasto";
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -405,16 +360,16 @@ function ExpenseForm({
               requestKey: key.current,
               date,
               period: form.item ? paymentPeriod : date.slice(0, 7),
-              kind: form.type === "saving" ? kind : "EXPENSE",
-              category: form.type === "saving" ? "SAVINGS" : category,
+              kind: form.type === "income" ? "INCOME" : "EXPENSE",
+              category,
               amount,
               concept: s("concept"),
-              funding: form.type === "saving" ? "CASH" : funding,
+              funding: form.type === "income" ? "CASH" : funding,
               fixedExpenseId:
                 form.type === "expense" ? form.item?.fixed_id || null : null,
             };
       const response = await fetch(
-        form.type === "fixed" ? "/api/fixed-expense" : "/api/cash",
+        form.type === "fixed" ? "/api/fixed-expense" : "/api/expense-entry",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -426,7 +381,7 @@ function ExpenseForm({
       await saved(
         form.type === "fixed"
           ? "Gasto fijo guardado con su mes de vigencia."
-          : "Movimiento guardado y presupuesto actualizado.",
+          : "Movimiento guardado en tu control de gastos.",
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo guardar.");
@@ -507,8 +462,8 @@ function ExpenseForm({
                 Activo desde ese mes
               </label>
               <p className="fine-print">
-                Se reserva en Necesidades (50%). En meses cortos vence el último
-                día del mes. Cambios con una nueva vigencia conservan la
+                Aparece en tu lista de gastos fijos. En meses cortos vence el
+                último día del mes. Cambios con una nueva vigencia conservan la
                 configuración de meses anteriores; desactívalo desde el mes en
                 que deje de aplicar.
               </p>
@@ -540,33 +495,16 @@ function ExpenseForm({
                       }}
                     />
                   </label>
-                ) : form.type === "expense" ? (
+                ) : (
                   <label>
-                    Parte del presupuesto
+                    Apartado
                     <select
                       value={category}
                       onChange={(e) => setCategory(e.target.value)}
                     >
-                      <option value="WANTS">Personal (30%)</option>
-                      <option value="NEEDS">Necesidades (50%)</option>
-                      <option value="SAVINGS">
-                        Ahorro del mes (20%, menos deuda)
-                      </option>
-                    </select>
-                  </label>
-                ) : (
-                  <label>
-                    Tipo de ahorro
-                    <select
-                      value={kind}
-                      onChange={(e) => setKind(e.target.value)}
-                    >
-                      <option value="SAVING">
-                        Apartar dinero de caja a ahorro
-                      </option>
-                      <option value="SAVINGS_OPENING">
-                        Incorporar saldo previo de ahorro
-                      </option>
+                      <option value="WANTS">Personal</option>
+                      <option value="NEEDS">Fijo</option>
+                      <option value="SAVINGS">Ahorro</option>
                     </select>
                   </label>
                 )}
@@ -578,7 +516,7 @@ function ExpenseForm({
                     value={funding}
                     onChange={(e) => setFunding(e.target.value)}
                   >
-                    <option value="CASH">Caja personal de este mes</option>
+                    <option value="CASH">Del apartado elegido</option>
                     <option value="SAVINGS">Ahorros acumulados</option>
                   </select>
                 </label>
@@ -589,9 +527,7 @@ function ExpenseForm({
                   name="concept"
                   required
                   maxLength={200}
-                  defaultValue={
-                    form.item?.name || (form.type === "saving" ? "Ahorro" : "")
-                  }
+                  defaultValue={form.item?.name || ""}
                   placeholder="Ej. Supermercado, salida, emergencia…"
                 />
               </label>
@@ -610,32 +546,14 @@ function ExpenseForm({
               onChange={(e) => setAmount(e.target.value)}
             />
           </label>
-          {form.type === "expense" && (
+          {form.type !== "fixed" && (
             <p className={prospective < 0 ? "warning" : "notice"} role="status">
               <Info size={17} />
-              {funding === "SAVINGS"
-                ? `Ahorro registrado después del gasto: ${usd(prospective)}. No se descuenta otra vez de caja ni de la asignación mensual.`
-                : `Disponible en esta quincena después de registrar: ${usd(prospective)}. Los fijos ya reservados se liberan al pagarlos.`}
+              Saldo de {expenseBucketNames[bucket as "NEEDS"]} después del
+              movimiento: {usd(prospective)}.
               {prospective < 0
                 ? " El registro se permite con alerta para reflejar el pago real."
                 : ""}
-            </p>
-          )}
-          {form.type === "saving" && kind === "SAVING" && (
-            <p className={prospective < 0 ? "warning" : "notice"} role="status">
-              Disponible en ahorro/deuda de esta quincena después de apartar:{" "}
-              {usd(prospective)}.
-              {prospective < 0
-                ? " Supera el presupuesto; se permite registrar el movimiento real."
-                : ""}
-            </p>
-          )}
-          {form.type === "saving" && (
-            <p className="notice">
-              <Info size={17} />
-              {kind === "SAVING"
-                ? "Apartar ahorro consume tu presupuesto de ahorro/deuda y sale de caja. Cuando lo gastes desde ahorros acumulados, se descontará solo del ahorro."
-                : "Registra únicamente ahorro que ya tenías fuera de caja y que aún no has ingresado. No crea salario ni consume el presupuesto de este mes."}
             </p>
           )}
         </div>

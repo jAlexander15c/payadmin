@@ -26,11 +26,15 @@ async function main() {
     const clean = await database().query(
       "SELECT (SELECT count(*) FROM cash_entries)+(SELECT count(*) FROM fixed_expenses)+(SELECT count(*) FROM fund_adjustments) AS n",
     );
-    if (Number(clean.rows[0].n) !== 0)
+    if (Number(clean.rows[0].n))
       throw new Error(
         "La prueba requiere una base _test sin movimientos ni gastos fijos.",
       );
-    for (const path of ["/api/cash", "/api/fixed-expense", "/api/fund"]) {
+    for (const path of [
+      "/api/expense-entry",
+      "/api/fixed-expense",
+      "/api/fund",
+    ]) {
       assert.equal(
         (
           await fetch(base + path, {
@@ -74,273 +78,143 @@ async function main() {
     await page.waitForURL(base + "/");
     const nav = (name: string) =>
       page.locator("aside").getByRole("button", { name, exact: true }).click();
-    const snapshot = async () => {
-      const r = await page.request.get(base + "/api/snapshot");
+    const get = async (path: string) => {
+      const r = await page.request.get(base + path);
       assert.equal(r.status(), 200);
       return r.json();
     };
-    const budget = async () => {
-      const r = await page.request.get(
-        base + `/api/budget?period=${period}&half=all`,
-      );
-      assert.equal(r.status(), 200);
-      return r.json();
-    };
+    const snapshot = () => get("/api/snapshot"),
+      expenses = () => get(`/api/expenses?period=${period}&half=all`),
+      budget = () => get(`/api/budget?period=${period}&half=all`);
     const save = async (name = "Guardar movimiento") => {
       await page.getByRole("button", { name, exact: true }).click();
       await page.getByRole("dialog").waitFor({ state: "hidden" });
     };
+    const beforeBudget = await budget(),
+      beforeSnapshot = await snapshot();
     await nav("Mis gastos");
     await page.getByRole("heading", { name: "Mis gastos." }).waitFor();
-    await page.getByRole("button", { name: "Definir gasto fijo" }).click();
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Ver presupuesto", exact: true })
+        .count(),
+      0,
+    );
+    assert.equal(
+      await page
+        .getByRole("heading", { name: "Disponible por categoría", exact: true })
+        .count(),
+      0,
+    );
+    for (const [bucket, amount] of [
+      ["NEEDS", "100.00"],
+      ["WANTS", "80.00"],
+      ["SAVINGS", "40.00"],
+    ]) {
+      await page
+        .locator(`[data-fund="${bucket}"]`)
+        .getByRole("button", { name: "Editar total", exact: true })
+        .click();
+      await page.getByLabel("Nuevo total (USD)").fill(amount);
+      await save("Guardar cambio");
+    }
+    let b = await expenses();
+    assert.equal(b.income, 0);
+    assert.equal(b.spent, 0);
+    const entry = async (
+      type: "income" | "expense",
+      bucket: string,
+      amount: string,
+      concept: string,
+    ) => {
+      await page
+        .getByRole("button", {
+          name: type === "income" ? "Registrar ingreso" : "Registrar gasto",
+          exact: true,
+        })
+        .click();
+      await page.getByLabel(/^Apartado/).selectOption(bucket);
+      await page.getByLabel("Concepto", { exact: true }).fill(concept);
+      await page.getByLabel("Importe (USD)").fill(amount);
+      await save();
+    };
+    await entry("income", "NEEDS", "50.00", "Ingreso para fijos de prueba");
+    await entry("income", "WANTS", "20.00", "Ingreso personal de prueba");
+    await entry("income", "SAVINGS", "10.00", "Ingreso a ahorro de prueba");
+    assert.deepEqual(
+      (await snapshot()).funds.map((r: any) => r.balance),
+      [15000, 10000, 5000],
+    );
+    assert.equal((await expenses()).income, 8000);
+    await page
+      .getByRole("button", { name: "Definir gasto fijo", exact: true })
+      .click();
     await page.getByLabel("Nombre del gasto").fill("Internet · prueba visual");
     await page.getByLabel("Vigente desde el mes").fill(period);
     await page.getByLabel("Día de vencimiento").fill("1");
-    await page.getByLabel("Importe (USD)").fill("100.00");
+    await page.getByLabel("Importe (USD)").fill("60.00");
     await save("Guardar gasto fijo");
-    let d = await snapshot();
-    fixedId = d.fixedExpenses.find((r: any) => r.created_by === user).fixed_id;
-    assert.equal(d.cash.length, 0);
-    assert.equal(d.real.paid, 0);
-    assert.equal((await budget()).fixedPending, 10000);
-    const firstRemaining = (await budget()).categories[0].remaining;
-    await page
-      .locator(".expense-fixed")
-      .getByRole("button", { name: "Registrar pago" })
-      .click();
-    await page.getByLabel("Importe (USD)").fill("30.00");
-    await save();
-    assert.equal((await budget()).fixedPending, 7000);
-    assert.equal((await budget()).categories[0].remaining, firstRemaining);
-    await page
-      .locator(".expense-fixed")
-      .getByText("Pago parcial", { exact: true })
-      .waitFor();
-    await page
-      .locator(".expense-fixed")
-      .getByRole("button", { name: "Registrar pago" })
-      .click();
-    await save();
-    await page.locator(".expense-fixed .status-badge.success").waitFor();
-    assert.equal((await budget()).fixedPending, 0);
-    d = await snapshot();
-    const first = d.cash.find((r: any) => r.amount === "30.00");
-    await page
-      .getByRole("row")
-      .filter({ hasText: "$30.00" })
-      .getByRole("button", { name: "Corregir / anular" })
+    fixedId = (await snapshot()).fixedExpenses[0].fixed_id;
+    const fixed = page.locator(".expense-fixed").filter({
+      has: page.getByRole("heading", {
+        name: "Internet · prueba visual",
+        exact: true,
+      }),
+    });
+    await fixed
+      .getByRole("button", { name: "Registrar pago", exact: true })
       .click();
     await page.getByLabel("Importe (USD)").fill("20.00");
-    await page
-      .getByLabel("Motivo para la auditoría")
-      .fill("Importe revisado en la prueba visual");
-    await save("Guardar corrección");
-    assert.equal((await budget()).fixedPending, 1000);
-    await page
-      .getByRole("row")
-      .filter({ hasText: "$20.00" })
-      .getByRole("button", { name: "Corregir / anular" })
-      .click();
-    await page.getByRole("button", { name: "Anular", exact: true }).click();
-    await page
-      .getByLabel("Motivo para la auditoría")
-      .fill("Pago de prueba anulado por corrección");
-    await save("Anular con auditoría");
-    assert.equal((await budget()).fixedPending, 3000);
-    d = await snapshot();
-    assert.equal(d.cash.find((r: any) => r.id === first.id).status, "void");
-    await page
-      .getByRole("button", { name: "Registrar gasto", exact: true })
-      .click();
-    await page.getByLabel("Concepto").fill("Personal · prueba visual");
+    await save();
+    assert.equal((await expenses()).fixed[0].pending, 4000);
+    const row = page
+      .locator("tbody tr")
+      .filter({ hasText: "Internet · prueba visual" });
+    await row.getByRole("button", { name: "Corregir / anular" }).click();
     await page.getByLabel("Importe (USD)").fill("25.00");
-    await save();
-    assert.equal((await budget()).categories[1].used, 2500);
     await page
-      .getByRole("button", { name: "Registrar ahorro o saldo previo" })
-      .click();
-    await page.getByLabel("Tipo de ahorro").selectOption("SAVINGS_OPENING");
-    await page.getByLabel("Importe (USD)").fill("100.00");
-    await save();
-    await page
-      .getByRole("button", { name: "Registrar ahorro o saldo previo" })
-      .click();
-    await page.getByLabel("Importe (USD)").fill("20.00");
-    await save();
-    await page
-      .getByRole("button", { name: "Registrar gasto", exact: true })
-      .click();
-    await page.getByLabel("Origen del dinero").selectOption("SAVINGS");
-    await page.getByLabel("Concepto").fill("Desde ahorro · prueba visual");
-    await page.getByLabel("Importe (USD)").fill("30.00");
-    await save();
-    let b = await budget();
-    assert.equal(b.savingsBalance, 9000);
-    assert.equal(b.actualCash, -11500);
-    assert.equal(b.categories[1].used, 2500);
-    assert.equal(b.categories[2].used, 2000);
-    await page
-      .getByRole("button", { name: "Registrar gasto", exact: true })
-      .click();
-    await page.getByLabel("Concepto").fill("Sobregiro de prueba");
-    await page.getByLabel("Importe (USD)").fill("1000.00");
-    await page
-      .getByRole("status")
-      .filter({ hasText: "se permite con alerta" })
-      .waitFor();
-    await save();
-    assert.ok((await budget()).categories[1].remaining < 0);
-    await page
-      .getByRole("button", { name: "Personal y variables", exact: true })
-      .click();
-    await page
-      .getByRole("row")
-      .filter({ hasText: "Sobregiro de prueba" })
-      .getByRole("button", { name: "Corregir / anular" })
-      .click();
+      .getByLabel("Motivo para la auditoría")
+      .fill("Corrección de importe de prueba");
+    await save("Guardar corrección");
+    assert.equal((await expenses()).fixed[0].pending, 3500);
+    assert.equal((await snapshot()).funds[0].balance, 12500);
+    await row.getByRole("button", { name: "Corregir / anular" }).click();
     await page.getByRole("button", { name: "Anular", exact: true }).click();
     await page
       .getByLabel("Motivo para la auditoría")
-      .fill("Retirar gasto de sobregiro de prueba");
+      .fill("Pago de prueba anulado");
     await save("Anular con auditoría");
-    const income = await page.request.post(base + "/api/cash", {
-      headers: { Origin: base },
-      data: {
-        requestKey: randomUUID(),
-        date: today,
-        period,
-        kind: "PAYROLL",
-        category: "OTHER",
-        amount: "496.66",
-        concept: "Planilla neta · prueba visual",
-      },
-    });
-    assert.equal(income.status(), 201);
-    await nav("Mi presupuesto");
-    await page.getByLabel("Período", { exact: true }).fill(period);
-    await page
-      .getByRole("button", { name: "Mes completo", exact: true })
+    assert.equal((await expenses()).fixed[0].pending, 6000);
+    assert.equal((await snapshot()).funds[0].balance, 15000);
+    await fixed
+      .getByRole("button", { name: "Registrar pago", exact: true })
       .click();
-    await page
-      .getByRole("heading", { name: "Disponible por categoría" })
-      .waitFor();
-    await page.getByText("$381.66", { exact: true }).waitFor();
-    await page.reload();
-    await nav("Mis gastos");
-    b = await budget();
-    assert.equal(b.actualCash, 38166);
-    assert.equal(b.savingsBalance, 9000);
-    assert.equal((await snapshot()).real.paid, 0);
-    const csv = await page.request.get(base + "/api/export?kind=budget");
-    assert.equal(csv.status(), 200);
-    assert.match(await csv.text(), /Origen de fondos/);
-    assert.match(await csv.text(), /SAVINGS/);
-    for (const [bucket, target] of [
-      ["NEEDS", "200.00"],
-      ["WANTS", "80.00"],
-      ["SAVINGS", "100.00"],
-    ]) {
-      const card = page.locator(`[data-fund="${bucket}"]`);
-      for (const [name, value] of [
-        ["Editar total", target],
-        ["Agregar", "10.00"],
-        ["Sacar", "5.00"],
-      ]) {
-        await card.getByRole("button", { name, exact: true }).click();
-        if (name === "Agregar")
-          await page
-            .getByLabel("¿Qué dinero estás agregando?")
-            .selectOption("ALLOCATION");
-        await page
-          .getByLabel(
-            name === "Editar total" ? "Nuevo total (USD)" : "Importe (USD)",
-          )
-          .fill(value);
-        await page
-          .getByLabel("Concepto o motivo")
-          .fill(`${name} de ${bucket} en prueba`);
-        await save("Guardar cambio");
-      }
-    }
-    d = await snapshot();
-    assert.deepEqual(
-      d.funds.map((r: any) => r.balance),
-      [20500, 8500, 10500],
+    await save();
+    assert.equal((await expenses()).fixed[0].pending, 0);
+    await entry("expense", "WANTS", "15.00", "Almuerzo · prueba visual");
+    await entry(
+      "expense",
+      "SAVINGS",
+      "5.00",
+      "Salida de ahorro · prueba visual",
     );
-    b = await budget();
-    assert.equal(b.actualCash, 37166);
-    assert.equal(b.savingsBalance, 10500);
-    assert.equal(b.categories[0].used, 7500);
-    assert.equal(b.categories[1].used, 3000);
+    b = await expenses();
+    assert.equal(b.spent, 8000);
+    assert.equal(b.net, 0);
+    assert.deepEqual(
+      b.categories.map((c: any) => c.spent),
+      [6000, 1500, 500],
+    );
+    await page
+      .getByRole("heading", { name: "Consumo por categoría", exact: true })
+      .waitFor();
+    await page
+      .getByRole("heading", { name: "Entradas y salidas por día", exact: true })
+      .waitFor();
+    await page.getByRole("img", { name: /Total consumido: \$80.00/ }).waitFor();
+    assert.deepEqual(await budget(), beforeBudget);
+    assert.equal((await snapshot()).real.paid, beforeSnapshot.real.paid);
     const personal = page.locator('[data-fund="WANTS"]');
-    await personal
-      .getByRole("button", { name: "Editar total", exact: true })
-      .click();
-    await page.getByLabel("Nuevo total (USD)").fill("0");
-    await page
-      .getByLabel("Concepto o motivo")
-      .fill("Poner saldo en cero de prueba");
-    await save("Guardar cambio");
-    assert.equal((await snapshot()).funds[1].balance, 0);
-    await personal
-      .getByRole("button", { name: "Editar total", exact: true })
-      .click();
-    await page.getByLabel("Nuevo total (USD)").fill("85.00");
-    await page
-      .getByLabel("Concepto o motivo")
-      .fill("Restablecer total de prueba");
-    await save("Guardar cambio");
-    const fixed = page.locator('[data-fund="NEEDS"]');
-    await fixed
-      .getByRole("button", { name: "Editar total", exact: true })
-      .click();
-    const concurrent = await page.request.post(base + "/api/fund", {
-      headers: { Origin: base },
-      data: {
-        requestKey: randomUUID(),
-        bucket: "NEEDS",
-        operation: "ADD",
-        amount: "1.00",
-        expectedBalance: 20500,
-        reason: "Cambio concurrente de prueba",
-      },
-    });
-    assert.equal(concurrent.status(), 201);
-    await page.getByLabel("Nuevo total (USD)").fill("210.00");
-    await page
-      .getByLabel("Concepto o motivo")
-      .fill("Edición con vista antigua de prueba");
-    await page
-      .getByRole("button", { name: "Guardar cambio", exact: true })
-      .click();
-    await page
-      .getByRole("alert")
-      .filter({ hasText: "El saldo cambió" })
-      .waitFor();
-    await page
-      .getByRole("button", { name: "Actualizar saldos", exact: true })
-      .click();
-    await page.getByRole("dialog").waitFor({ state: "hidden" });
-    await fixed
-      .getByRole("button", { name: "Editar total", exact: true })
-      .click();
-    await page.getByLabel("Nuevo total (USD)").fill("210.00");
-    await page
-      .getByLabel("Concepto o motivo")
-      .fill("Edición con saldo actualizado de prueba");
-    await save("Guardar cambio");
-    await page.getByText(/Historial de cambios de totales/).click();
-    await page.getByRole("columnheader", { name: "Antes → después" }).waitFor();
-    const fundsCsv = await page.request.get(base + "/api/export?kind=funds");
-    assert.equal(fundsCsv.status(), 200);
-    assert.match(await fundsCsv.text(), /Antes USD/);
-    await page.reload();
-    await nav("Mis gastos");
-    assert.deepEqual(
-      (await snapshot()).funds.map((r: any) => r.balance),
-      [21000, 8500, 10500],
-    );
-    assert.equal((await budget()).actualCash, 37166);
     await personal
       .getByRole("button", { name: "Agregar", exact: true })
       .click();
@@ -350,30 +224,129 @@ async function main() {
     await page.getByLabel("¿Qué quieres registrar?").selectOption("ADJUSTMENT");
     await page.getByLabel("Importe (USD)").fill("10.00");
     await save("Guardar cambio");
-    await page
-      .locator('[data-fund="SAVINGS"]')
-      .getByRole("button", { name: "Agregar", exact: true })
-      .click();
-    await page.getByLabel("Importe (USD)").fill("20.00");
+    b = await expenses();
+    assert.equal(b.income, 12000);
+    assert.equal(b.spent, 8000);
+    assert.equal(b.net, 4000);
+    assert.equal((await snapshot()).funds[1].balance, 11500);
+    await personal.getByRole("button", { name: "Sacar", exact: true }).click();
+    await page.getByLabel("Importe (USD)").fill("5.00");
     await save("Guardar cambio");
-    b = await budget();
-    assert.equal(b.extraIncome, 6000);
-    assert.equal(b.extraIncomeSaved, 2000);
-    assert.equal(b.actualCash, 41166);
-    assert.equal(b.categories[1].used, 3000);
-    assert.equal(b.categories[1].extraIncome, 4000);
-    assert.equal(b.categories[2].extraIncome, 2000);
-    assert.equal(b.payrollIncome, 49666);
-    assert.equal(b.otherIncome, 6000);
-    await page
-      .getByText("Base salarial: 50 / 30 / 20", { exact: true })
-      .waitFor();
-    assert.equal(b.savingsBalance, 12500);
+    assert.equal((await expenses()).spent, 8500);
+    assert.deepEqual(await budget(), beforeBudget);
+    const current = (await snapshot()).funds[1].balance;
+    const add = await page.request.post(base + "/api/fund", {
+      headers: { Origin: base },
+      data: {
+        requestKey: randomUUID(),
+        bucket: "WANTS",
+        operation: "ADD",
+        effect: "ALLOCATION",
+        amount: "1.00",
+        expectedBalance: current,
+      },
+    });
+    assert.equal(add.status(), 201);
+    const conflict = await page.request.post(base + "/api/fund", {
+      headers: { Origin: base },
+      data: {
+        requestKey: randomUUID(),
+        bucket: "WANTS",
+        operation: "SET",
+        amount: "0",
+        expectedBalance: current,
+      },
+    });
+    assert.equal(conflict.status(), 409);
+    const oldExpense = (await snapshot()).expenseCash.find(
+      (r: any) => r.status === "active",
+    );
+    assert.equal(
+      (
+        await page.request.post(base + `/api/cash/${oldExpense.id}`, {
+          headers: { Origin: base },
+          data: {
+            revision: oldExpense.revision,
+            action: "void",
+            reason: "Cruce de apartados de prueba",
+          },
+        })
+      ).status(),
+      404,
+    );
+    const payroll = await page.request.post(base + "/api/cash", {
+      headers: { Origin: base },
+      data: {
+        requestKey: randomUUID(),
+        date: today,
+        period,
+        kind: "PAYROLL",
+        category: "OTHER",
+        amount: "100.00",
+        concept: "Planilla aislada de prueba",
+      },
+    });
+    assert.equal(payroll.status(), 201);
+    const payrollId = (await payroll.json()).id;
+    assert.equal((await budget()).income, beforeBudget.income + 10000);
+    assert.equal((await expenses()).income, 12000);
+    assert.equal(
+      (
+        await page.request.post(base + `/api/expense-entry/${payrollId}`, {
+          headers: { Origin: base },
+          data: {
+            revision: 1,
+            action: "void",
+            reason: "Cruce de apartados de prueba",
+          },
+        })
+      ).status(),
+      404,
+    );
+    const expenseCsv = await page.request.get(
+        base + "/api/export?kind=expenses",
+      ),
+      budgetCsv = await page.request.get(base + "/api/export?kind=budget");
+    assert.equal(expenseCsv.status(), 200);
+    assert.equal(budgetCsv.status(), 200);
+    assert.match(await expenseCsv.text(), /Internet · prueba visual/);
+    assert.doesNotMatch(await expenseCsv.text(), /Planilla aislada/);
+    assert.match(await budgetCsv.text(), /Planilla aislada/);
+    assert.doesNotMatch(await budgetCsv.text(), /Internet · prueba visual/);
+    await page.reload();
+    await nav("Mis gastos");
+    assert.equal((await expenses()).spent, 8500);
     assert.deepEqual(
       (await snapshot()).funds.map((r: any) => r.balance),
-      [21000, 11500, 12500],
+      [9000, 11100, 4500],
     );
-    await mkdir(".local/prototype", { recursive: true });
+    await page
+      .getByRole("button", { name: "Personal y variables", exact: true })
+      .click();
+    await page
+      .getByRole("heading", {
+        name: "Gastos personales y variables",
+        exact: true,
+      })
+      .waitFor();
+    assert.equal(
+      await page
+        .locator("table tbody")
+        .getByText("Almuerzo · prueba visual", { exact: true })
+        .count(),
+      1,
+    );
+    await page.getByRole("button", { name: "Ahorro", exact: true }).click();
+    assert.equal(
+      await page
+        .locator("table tbody")
+        .getByText("Salida de ahorro · prueba visual", { exact: true })
+        .count(),
+      1,
+    );
+    await page
+      .getByRole("button", { name: "Todos los movimientos", exact: true })
+      .click();
     const overflow = async () =>
       assert.equal(
         await page.evaluate(
@@ -381,20 +354,22 @@ async function main() {
         ),
         false,
       );
+    await mkdir(".local/prototype", { recursive: true });
     await overflow();
     await page.screenshot({
       path: ".local/prototype/gastos-dark.png",
       fullPage: true,
     });
     await page.getByRole("button", { name: "Activar modo claro" }).click();
+    await page.waitForTimeout(250);
     await overflow();
     await page.screenshot({
       path: ".local/prototype/gastos-light.png",
       fullPage: true,
     });
     await page.getByRole("button", { name: "Activar modo oscuro" }).click();
-    await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(250);
+    await page.setViewportSize({ width: 390, height: 844 });
     await overflow();
     await page.screenshot({
       path: ".local/prototype/gastos-mobile.png",
@@ -403,23 +378,13 @@ async function main() {
     await page
       .locator(".fund-totals")
       .screenshot({ path: ".local/prototype/totales-mobile.png" });
-    await page
-      .locator('[data-fund="WANTS"]')
-      .getByRole("button", { name: "Agregar", exact: true })
-      .click();
-    await page.getByLabel("Importe (USD)").fill("1.00");
-    await page
-      .getByLabel("Concepto o motivo")
-      .fill("Agregar desde móvil de prueba");
-    await save("Guardar cambio");
-    assert.equal((await snapshot()).funds[1].balance, 11600);
-    assert.equal((await budget()).actualCash, 41266);
+    await entry("income", "WANTS", "1.00", "Ingreso móvil de prueba");
+    assert.equal((await expenses()).income, 12100);
+    assert.equal((await snapshot()).funds[1].balance, 11200);
     await page
       .getByRole("button", { name: "Registrar gasto", exact: true })
       .click();
     await overflow();
-    await page.getByLabel("Concepto").fill("Formulario móvil · prueba visual");
-    await page.getByLabel("Importe (USD)").fill("2.00");
     await page.screenshot({
       path: ".local/prototype/gasto-form-mobile.png",
       fullPage: true,
@@ -427,26 +392,26 @@ async function main() {
     await page.getByRole("button", { name: "Cerrar gasto" }).click();
     await page.getByRole("button", { name: "Abrir navegación" }).click();
     await nav("Mi presupuesto");
-    await page.getByRole("heading", { name: "Mi presupuesto." }).waitFor();
     await page.getByLabel("Período", { exact: true }).fill(period);
     await page
       .getByRole("button", { name: "Mes completo", exact: true })
       .click();
     await page
-      .getByRole("heading", { name: "Referencia salarial 50 / 30 / 20" })
+      .getByRole("heading", {
+        name: "Referencia salarial 50 / 30 / 20",
+        exact: true,
+      })
       .waitFor();
-    const salaryStat = page.locator(".detail-grid > div").filter({
-      has: page.getByText("Planilla neta recibida", { exact: true }),
-    });
-    const otherIncomeStat = page.locator(".detail-grid > div").filter({
-      has: page.getByText("Otros ingresos recibidos", { exact: true }),
-    });
-    await salaryStat.getByText("$496.66", { exact: true }).waitFor();
-    await otherIncomeStat.getByText("$61.00", { exact: true }).waitFor();
+    assert.equal(
+      await page
+        .getByRole("heading", { name: "Consumo por categoría", exact: true })
+        .count(),
+      0,
+    );
     await overflow();
     assert.deepEqual(errors, []);
     console.log(
-      "Gastos y totales: configuración, pagos parciales, corrección/anulación, agregar/sacar/editar, saldo cero, conflicto concurrente, historial, ahorro acumulado, presupuesto/caja, persistencia, temas y móvil: OK.",
+      "Mis gastos independiente: ingresos/salidas, categorías, gráficos, saldos, fijos parciales, corrección/anulación, origen, idempotencia, CSV separado, persistencia, ambos temas y móvil: OK.",
     );
   } finally {
     await browser.close();
@@ -465,11 +430,12 @@ async function main() {
       await database().query("DELETE FROM fixed_expenses WHERE id=$1", [
         fixedId,
       ]);
+    await database().query("DELETE FROM sessions WHERE user_id=$1", [user]);
     await database().query("DELETE FROM app_users WHERE id=$1", [user]);
     await database().end();
   }
 }
 main().catch((e) => {
-  console.error(e.message);
+  console.error(e);
   process.exitCode = 1;
 });

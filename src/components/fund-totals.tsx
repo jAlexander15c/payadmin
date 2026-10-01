@@ -75,10 +75,10 @@ export default function FundTotals({
       <p className="fine-print">
         Puedes empezar aunque la quincena ya haya comenzado: usa «Editar total»
         para indicar lo que te queda hoy, sin registrar los gastos anteriores.
-        Los gastos de Necesidades descuentan Fijo; los personales descuentan
-        Personal; los pagados desde ahorros acumulados descuentan Ahorro.
-        «Agregar» permite ingresos extra o dinero que ya tenías; «Sacar» permite
-        una salida nueva o un ajuste de saldo. Ingresa cada salida una sola vez,
+        Los gastos de Fijo descuentan Fijo; los personales descuentan Personal;
+        los pagados desde ahorros acumulados descuentan Ahorro. «Agregar»
+        permite ingresos extra o dinero que ya tenías; «Sacar» permite una
+        salida nueva o un ajuste de saldo. Ingresa cada salida una sola vez,
         aquí o en Registrar gasto/pago.
       </p>
       <details className="fund-history">
@@ -326,14 +326,14 @@ function FundForm({
               : operation === "ADD"
                 ? effect === "INCOME"
                   ? wallet.id === "SAVINGS"
-                    ? "Registra un ingreso extra destinado directamente a ahorro. Se suma al saldo de ahorro y al presupuesto de este apartado; no queda disponible en caja ni modifica tu salario."
-                    : "Registra el ingreso extra una sola vez: suma al saldo, a la caja y al presupuesto de este apartado. Tú eliges dónde ponerlo; no cambia tu salario ni se reparte automáticamente."
+                    ? "Registra una entrada destinada a Ahorro. Suma a ese saldo y a las entradas de tu control de gastos. La referencia salarial se conserva."
+                    : "Registra el ingreso una sola vez: suma al saldo y a las entradas de este apartado. Tú eliges dónde ponerlo; no cambia tu salario ni se reparte automáticamente."
                   : "Agrega dinero que ya tenías o cuyo ingreso ya registraste. Suma al saldo sin duplicar ingresos."
                 : effect === "ADJUSTMENT"
-                  ? "Solo reduce el saldo para reflejar lo que tienes ahora. No crea un gasto nuevo ni altera los ingresos o gastos de esta quincena."
+                  ? "Solo reduce el saldo para reflejar lo que tienes ahora. No crea una salida nueva ni se cuenta como consumo."
                   : wallet.id === "SAVINGS"
-                    ? "Descuenta una salida del ahorro acumulado. No se resta otra vez de caja ni del ahorro del mes. Si ya registraste este gasto, no lo saques de nuevo."
-                    : "Esta salida descuenta el saldo, la caja y el presupuesto de su categoría. Para pagar un gasto fijo definido, usa Registrar pago; no ingreses la misma salida dos veces."}
+                    ? "Descuenta el saldo de Ahorro y registra una salida en ese apartado. Si ya registraste este gasto, no lo saques de nuevo."
+                    : "Esta salida descuenta el saldo y se cuenta como consumo del apartado. Para pagar un gasto fijo definido, usa Registrar pago; no ingreses la misma salida dos veces."}
           </p>
           {error && (
             <p className="error" role="alert">

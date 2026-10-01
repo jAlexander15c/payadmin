@@ -35,12 +35,15 @@ export function fundBalances(
   };
   for (const r of d.cash) {
     if (r.status !== "active" || r.date > asOf) continue;
-    if (r.kind === "SAVING" || r.kind === "SAVINGS_OPENING") {
+    if (r.kind === "INCOME" && FUND_BUCKETS.includes(r.category)) {
+      balances[r.category as FundBucket] += cents(r.amount);
+      configured[r.category as FundBucket] = true;
+    } else if (r.kind === "SAVING" || r.kind === "SAVINGS_OPENING") {
       balances.SAVINGS += cents(r.amount);
       configured.SAVINGS = true;
     } else if (r.kind === "EXPENSE") {
       if (r.funding === "SAVINGS") balances.SAVINGS -= cents(r.amount);
-      else if (r.category === "NEEDS" || r.category === "WANTS")
+      else if (FUND_BUCKETS.includes(r.category))
         balances[r.category as FundBucket] -= cents(r.amount);
     }
   }

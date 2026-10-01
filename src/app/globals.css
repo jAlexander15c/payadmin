@@ -2542,7 +2542,127 @@ input:disabled {
   }
 }
 
-/* Personal spending shares the budget and the cash ledger. */
+/* Independent personal spending ledger. */
+.expense-charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.expense-charts .panel {
+  min-width: 0;
+}
+.expense-consumption {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 18px 0;
+}
+.expense-donut {
+  flex-shrink: 0;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  padding: 22px;
+}
+.expense-donut > div {
+  height: 100%;
+  border-radius: 50%;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.expense-donut strong {
+  font-size: 22px;
+}
+.expense-chart-legend {
+  flex: 1;
+  min-width: 0;
+}
+.expense-chart-legend .composition-line {
+  align-items: flex-start;
+  gap: 12px;
+}
+.expense-chart-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+.expense-chart-legend b {
+  text-align: right;
+}
+.expense-chart-legend small {
+  display: block;
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 5px;
+}
+.expense-flow-key {
+  display: flex;
+  gap: 18px;
+  margin-bottom: 14px;
+}
+.expense-flow-key span:first-child {
+  color: var(--chunky-ink);
+}
+.expense-flow-key span:last-child {
+  color: var(--cards-ink);
+}
+.expense-daily {
+  max-height: 330px;
+  overflow: auto;
+}
+.expense-day {
+  display: grid;
+  grid-template-columns: 80px 1fr 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.expense-day time,
+.expense-day small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.expense-bar-track {
+  height: 12px;
+  background: var(--surface-muted);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 5px;
+}
+.expense-bar-track span {
+  display: block;
+  height: 100%;
+}
+.expense-in-bar {
+  background: #6bb59c;
+}
+.expense-out-bar {
+  background: #ddb978;
+}
+@media (max-width: 1100px) {
+  .expense-charts {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 600px) {
+  .expense-consumption {
+    flex-direction: column;
+  }
+  .expense-chart-legend {
+    width: 100%;
+  }
+  .expense-day {
+    grid-template-columns: 68px 1fr 1fr;
+    gap: 8px;
+  }
+}
 .fund-actions {
   display: flex;
   flex-wrap: wrap;
