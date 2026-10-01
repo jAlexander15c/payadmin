@@ -11,6 +11,7 @@ import {
   saveStatement,
   confirmFirstDate,
   snapshot,
+  saveFixedExpense,
 } from "@/lib/store";
 import { period, simulationInput } from "@/lib/validation";
 import { budgetFor } from "@/lib/budget";
@@ -195,6 +196,8 @@ export async function GET(req: Request, ctx: Context) {
             "Importe USD",
             "Concepto",
             "Estado",
+            "Origen de fondos",
+            "Gasto fijo ID",
           ],
           ...data.cash.map((x) => [
             x.id,
@@ -205,6 +208,8 @@ export async function GET(req: Request, ctx: Context) {
             x.amount,
             x.concept,
             x.status,
+            x.funding,
+            x.fixed_expense_id,
           ]),
         ];
       else if (kind === "projection")
@@ -316,6 +321,8 @@ export async function POST(req: Request, ctx: Context) {
       return response(await confirmFirstDate(raw, user.id));
     if (path.join("/") === "parameters")
       return response(await saveParameters(raw, user.id));
+    if (path.join("/") === "fixed-expense")
+      return response(await saveFixedExpense(raw, user.id));
     if (path.join("/") === "responsibilities")
       return response(await saveResponsibilities(raw, user.id));
     if (path.join("/") === "simulate") {

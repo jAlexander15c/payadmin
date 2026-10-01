@@ -13,7 +13,9 @@ import {
   statementInput,
   cashCompensationInput,
   cashCompensationCorrectionInput,
+  fixedExpenseInput,
 } from "./validation";
+import { fixedExpensesAt } from "./budget";
 import {
   capital,
   cents,
@@ -59,6 +61,7 @@ export async function readData(c: Queryable = database()) {
     loan,
     schedule,
     cashCompensations,
+    fixedExpenses,
   ] = await (async () => [
     await c.query(
       "SELECT *,to_char(first_due,'YYYY-MM-DD') AS due FROM parameter_versions ORDER BY effective_period",
@@ -91,6 +94,9 @@ export async function readData(c: Queryable = database()) {
     ),
     await c.query(
       "SELECT x.*,to_char(r.occurred_on,'YYYY-MM-DD') AS date,r.contributor,r.source_id,r.status AS receipt_status FROM cash_compensations x JOIN contributions r ON r.id=x.contribution_id ORDER BY r.occurred_on,x.created_at,x.id",
+    ),
+    await c.query(
+      "SELECT v.*,f.revision FROM fixed_expense_versions v JOIN fixed_expenses f ON f.id=v.fixed_id ORDER BY v.effective_period,v.name",
     ),
   ])();
   if (
@@ -153,6 +159,7 @@ export async function readData(c: Queryable = database()) {
     loan: loan.rows[0],
     scheduleVersions: schedule.rows,
     cashCompensations: cashCompensations.rows,
+    fixedExpenses: fixedExpenses.rows,
   };
 }
 export async function confirmFirstDate(
@@ -444,6 +451,97 @@ async function locked<T>(fn: (c: PoolClient) => Promise<T>) {
     return fn(c);
   });
 }
+async function validateFixedPayment(
+  c: PoolClient,
+  v: ReturnType<typeof cashInput.parse>,
+) {
+  if (!v.fixedExpenseId) return;
+  const versions = await c.query(
+    "SELECT * FROM fixed_expense_versions WHERE fixed_id=$1 ORDER BY effective_period",
+    [v.fixedExpenseId],
+  );
+  const item = fixedExpensesAt(versions.rows, v.period)[0];
+  if (!item?.active)
+    throw new HttpError(
+      409,
+      "Este gasto fijo no está activo en el mes del pago.",
+    );
+}
+export async function saveFixedExpense(raw: unknown, user: string) {
+  const v = fixedExpenseInput.parse(raw);
+  return locked(async (c) => {
+    let id = v.id;
+    let before: unknown = null;
+    if (!id) {
+      const existing = await c.query(
+        "SELECT id FROM fixed_expenses WHERE request_key=$1",
+        [v.requestKey],
+      );
+      if (existing.rowCount) {
+        const same = await c.query(
+          "SELECT after_data=$2::jsonb AS equal FROM audit_log WHERE entity='fixed_expense' AND entity_id=$1 AND action='create' ORDER BY id LIMIT 1",
+          [existing.rows[0].id, JSON.stringify(v)],
+        );
+        if (!same.rows[0]?.equal)
+          throw new HttpError(
+            409,
+            "Este identificador ya se usó con datos distintos.",
+          );
+        return { id: existing.rows[0].id, duplicate: true };
+      }
+      id = randomUUID();
+      await c.query(
+        "INSERT INTO fixed_expenses(id,request_key) VALUES($1,$2)",
+        [id, v.requestKey],
+      );
+    } else {
+      const parent = await c.query(
+        "SELECT revision FROM fixed_expenses WHERE id=$1 FOR UPDATE",
+        [id],
+      );
+      if (!parent.rowCount) throw new HttpError(404, "Gasto fijo inexistente.");
+      if (parent.rows[0].revision !== v.revision)
+        throw new HttpError(
+          409,
+          "El gasto fijo cambió. Actualiza antes de editar.",
+        );
+      before = (
+        await c.query(
+          "SELECT * FROM fixed_expense_versions WHERE fixed_id=$1 ORDER BY effective_period",
+          [id],
+        )
+      ).rows;
+      await c.query(
+        "UPDATE fixed_expenses SET revision=revision+1 WHERE id=$1",
+        [id],
+      );
+    }
+    await c.query(
+      "INSERT INTO fixed_expense_versions(id,fixed_id,effective_period,name,amount,due_day,active,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(fixed_id,effective_period) DO UPDATE SET name=excluded.name,amount=excluded.amount,due_day=excluded.due_day,active=excluded.active,created_by=excluded.created_by,created_at=now()",
+      [
+        randomUUID(),
+        id,
+        v.effectivePeriod,
+        v.name,
+        v.amount,
+        v.dueDay,
+        v.active,
+        user,
+      ],
+    );
+    await audit(
+      c,
+      user,
+      "fixed_expense",
+      id,
+      v.id ? "update" : "create",
+      before,
+      v,
+      "Configuración de gasto fijo por mes de vigencia",
+    );
+    return { id, duplicate: false };
+  });
+}
 function realDate(date: string, period: string, start: string, today: string) {
   if (date > today)
     throw new HttpError(
@@ -644,8 +742,9 @@ export async function createRecord(
       );
     } else {
       const v = cashInput.parse(raw);
+      await validateFixedPayment(c, v);
       await c.query(
-        "INSERT INTO cash_entries(id,request_key,occurred_on,period,kind,category,amount,concept,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+        "INSERT INTO cash_entries(id,request_key,occurred_on,period,kind,category,amount,concept,created_by,funding,fixed_expense_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
         [
           id,
           v.requestKey,
@@ -656,6 +755,8 @@ export async function createRecord(
           v.amount,
           v.concept,
           user,
+          v.funding,
+          v.fixedExpenseId,
         ],
       );
     }
@@ -861,9 +962,20 @@ export async function correctRecord(
         );
       } else {
         const b = cashInput.parse(v.data);
+        await validateFixedPayment(c, b);
         await c.query(
-          "UPDATE cash_entries SET occurred_on=$2,period=$3,kind=$4,category=$5,amount=$6,concept=$7,revision=revision+1 WHERE id=$1",
-          [id, b.date, b.period, b.kind, b.category, b.amount, b.concept],
+          "UPDATE cash_entries SET occurred_on=$2,period=$3,kind=$4,category=$5,amount=$6,concept=$7,funding=$8,fixed_expense_id=$9,revision=revision+1 WHERE id=$1",
+          [
+            id,
+            b.date,
+            b.period,
+            b.kind,
+            b.category,
+            b.amount,
+            b.concept,
+            b.funding,
+            b.fixedExpenseId,
+          ],
         );
       }
     }

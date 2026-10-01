@@ -19,7 +19,18 @@ type BudgetData = {
   cash: Row[];
   rawMovements: Row[];
   participants: Row[];
+  fixedExpenses?: Row[];
 };
+export function fixedExpensesAt(versions: Row[], period: string) {
+  const latest = new Map<string, Row>();
+  for (const v of [...versions].sort((a, b) =>
+    a.effective_period.localeCompare(b.effective_period),
+  ))
+    if (v.effective_period <= period) latest.set(v.fixed_id, v);
+  return [...latest.values()].sort(
+    (a, b) => a.due_day - b.due_day || a.name.localeCompare(b.name),
+  );
+}
 export function budgetFor(
   d: BudgetData,
   period: string,
@@ -41,8 +52,35 @@ export function budgetFor(
       entries.filter((r) => r.kind === "PAYROLL" || r.kind === "INCOME"),
     ),
     reimb = total(receipts),
-    spent = total(entries.filter((r) => r.kind === "EXPENSE")),
+    spent = total(
+      entries.filter((r) => r.kind === "EXPENSE" && r.funding !== "SAVINGS"),
+    ),
     saving = total(entries.filter((r) => r.kind === "SAVING"));
+  const savingsSpent = total(
+    entries.filter((r) => r.kind === "EXPENSE" && r.funding === "SAVINGS"),
+  );
+  const savingsBefore = sum(
+    d.cash
+      .filter(
+        (r) =>
+          r.status === "active" &&
+          (r.date.slice(0, 7) < period ||
+            (r.date.slice(0, 7) === period &&
+              half === "2" &&
+              Number(r.date.slice(8)) <= 15)),
+      )
+      .map((r) =>
+        r.kind === "SAVING" || r.kind === "SAVINGS_OPENING"
+          ? cents(r.amount)
+          : r.kind === "EXPENSE" && r.funding === "SAVINGS"
+            ? -cents(r.amount)
+            : 0,
+      ),
+  );
+  const savingsOpening = total(
+    entries.filter((r) => r.kind === "SAVINGS_OPENING"),
+  );
+  const savingsBalance = savingsBefore + savingsOpening + saving - savingsSpent;
   const extras = total(
     d.rawMovements.filter(
       (r) =>
@@ -124,6 +162,82 @@ export function budgetFor(
       r.period === period &&
       (half === "all" || (Number(r.date.slice(8)) <= 15 ? "1" : "2") === half),
   );
+  const fixed = fixedExpensesAt(d.fixedExpenses || [], period)
+    .map(
+      (
+        v,
+      ): Row & {
+        dueDate: string;
+        planned: number;
+        paid: number;
+        pending: number;
+      } => {
+        const dueDay = Math.min(
+          v.due_day,
+          new Date(
+            Number(period.slice(0, 4)),
+            Number(period.slice(5, 7)),
+            0,
+          ).getDate(),
+        );
+        const paid = total(
+          d.cash.filter(
+            (r) =>
+              r.status === "active" &&
+              r.kind === "EXPENSE" &&
+              r.fixed_expense_id === v.fixed_id &&
+              r.period === period,
+          ),
+        );
+        return {
+          ...v,
+          dueDate: `${period}-${String(dueDay).padStart(2, "0")}`,
+          planned: cents(v.amount),
+          paid,
+          pending: v.active ? Math.max(0, cents(v.amount) - paid) : 0,
+        };
+      },
+    )
+    .filter((v) => v.active || v.paid > 0)
+    .filter(
+      (v) =>
+        half === "all" ||
+        (Number(v.dueDate.slice(8)) <= 15 ? "1" : "2") === half,
+    );
+  const fixedPending = sum(fixed.map((v) => v.pending));
+  const categories = ["NEEDS", "WANTS", "SAVINGS"].map((id, i) => {
+    const limit = i === 2 ? room : distribution[i].amount;
+    const used =
+      total(
+        entries.filter(
+          (r) =>
+            r.funding !== "SAVINGS" &&
+            (r.kind === "SAVING"
+              ? i === 2
+              : r.kind === "EXPENSE" &&
+                (i === 2
+                  ? ["SAVINGS", "DEBT"].includes(r.category)
+                  : r.category === id)),
+        ),
+      ) + (i === 2 ? extras : 0);
+    const reserved = i === 0 ? fixedPending : 0;
+    return {
+      id,
+      name: ["Gastos fijos y necesidades", "Personal", "Ahorro y deuda"][i],
+      limit,
+      used,
+      reserved,
+      remaining: limit - used - reserved,
+    };
+  });
+  const unclassified = total(
+    entries.filter(
+      (r) =>
+        r.kind === "EXPENSE" &&
+        r.category === "OTHER" &&
+        r.funding !== "SAVINGS",
+    ),
+  );
   return {
     period,
     half,
@@ -140,6 +254,14 @@ export function budgetFor(
     reimb,
     spent,
     saving,
+    savingsSpent,
+    savingsBefore,
+    savingsOpening,
+    savingsBalance,
+    fixed,
+    fixedPending,
+    categories,
+    unclassified,
     extras,
     myPercent: myPercent ?? null,
     myCredi,

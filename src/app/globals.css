@@ -199,6 +199,10 @@ strong {
   display: flex;
   flex-direction: column;
   z-index: 30;
+  overflow-y: auto;
+}
+.sidebar > * {
+  flex-shrink: 0;
 }
 .brand {
   display: flex;
@@ -2116,6 +2120,7 @@ input:disabled {
 @media (max-width: 740px) {
   .sidebar {
     transform: translateX(-100%);
+    visibility: hidden;
     transition: transform 0.2s;
     width: 245px;
     background: var(--surface-raised);
@@ -2123,6 +2128,7 @@ input:disabled {
   }
   .sidebar.open {
     transform: translateX(0);
+    visibility: visible;
   }
   .nav-backdrop {
     display: block;
@@ -2533,5 +2539,144 @@ input:disabled {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+}
+
+/* Personal spending shares the budget and the cash ledger. */
+.expense-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.expense-toolbar > .button {
+  margin-left: auto;
+}
+.expense-budget-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+.expense-budget {
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px;
+}
+.expense-budget h3 {
+  display: inline;
+  margin-left: 9px;
+  font-size: 14px;
+}
+.expense-budget > strong {
+  display: block;
+  font-size: 26px;
+  margin: 20px 0 7px;
+}
+.expense-budget > small {
+  display: block;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.expense-budget .composition-line {
+  font-size: 12px;
+}
+.expense-negative {
+  color: var(--negative);
+}
+.expense-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.expense-summary > .panel > small {
+  color: var(--muted);
+}
+.expense-summary h2 {
+  font-size: 28px;
+  margin: 14px 0;
+}
+.expense-fixed {
+  display: grid;
+  grid-template-columns:
+    minmax(160px, 1.5fr) repeat(3, minmax(90px, 1fr))
+    minmax(125px, 1fr);
+  gap: 16px;
+  padding: 22px 0;
+  border-top: 1px solid var(--line);
+  align-items: center;
+}
+.expense-fixed h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.expense-fixed small {
+  display: block;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.expense-fixed .status-badge {
+  display: inline-flex;
+  margin-top: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 11px;
+}
+.expense-fixed .status-badge.success {
+  background: var(--positive-bg);
+  color: var(--positive);
+}
+.expense-fixed-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: flex-start;
+}
+@media (max-width: 1100px) {
+  .expense-budget-grid {
+    gap: 12px;
+  }
+  .expense-budget {
+    padding: 15px;
+  }
+  .expense-fixed {
+    grid-template-columns: minmax(150px, 1fr) repeat(3, minmax(70px, 1fr));
+  }
+  .expense-fixed-actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+  }
+}
+@media (max-width: 740px) {
+  .expense-budget-grid,
+  .expense-summary {
+    grid-template-columns: 1fr;
+  }
+  .expense-toolbar {
+    gap: 12px;
+  }
+  .expense-toolbar .tabs {
+    width: 100%;
+  }
+  .expense-toolbar > .button {
+    width: 100%;
+    margin-left: 0;
+  }
+  .expense-fixed {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .expense-fixed > div:first-child {
+    grid-column: 1 / -1;
+  }
+  .expense-fixed > div {
+    min-width: 0;
+  }
+  .expense-fixed strong {
+    font-size: 13px;
   }
 }

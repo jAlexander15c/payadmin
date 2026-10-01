@@ -117,3 +117,199 @@ test("Caja usa fecha efectiva; aportes esperados usan el período de responsabil
   assert.equal(oct.actualCash, 0);
   assert.equal(oct.contributions[0].received, 17124);
 });
+test("Fijos reservan presupuesto sin crear pagos; parciales liberan reserva sin duplicarla", () => {
+  const d: any = data();
+  d.fixedExpenses = [
+    {
+      fixed_id: "rent",
+      effective_period: "2026-10",
+      name: "Alquiler",
+      amount: "300.00",
+      due_day: 5,
+      active: true,
+    },
+  ];
+  const before = budgetFor(d, "2026-10", "1");
+  assert.equal(before.actualCash, 0);
+  assert.equal(before.categories[0].remaining, 2773);
+  d.cash = [
+    {
+      date: "2026-10-03",
+      period: "2026-10",
+      kind: "EXPENSE",
+      category: "NEEDS",
+      funding: "CASH",
+      fixed_expense_id: "rent",
+      amount: "100.00",
+      status: "active",
+    },
+  ];
+  const after = budgetFor(d, "2026-10", "1");
+  assert.equal(after.fixed[0].paid, 10000);
+  assert.equal(after.fixed[0].pending, 20000);
+  assert.equal(after.categories[0].remaining, before.categories[0].remaining);
+  assert.equal(after.actualCash, -10000);
+  d.cash[0].status = "void";
+  assert.equal(budgetFor(d, "2026-10", "1").fixed[0].paid, 0);
+});
+test("Gasto desde ahorro acumulado no sale de caja ni consume dos veces la asignación mensual", () => {
+  const d: any = data();
+  d.cash = [
+    {
+      date: "2026-09-01",
+      kind: "SAVINGS_OPENING",
+      amount: "200.00",
+      status: "active",
+    },
+    { date: "2026-09-15", kind: "SAVING", amount: "50.00", status: "active" },
+    {
+      date: "2026-10-01",
+      kind: "EXPENSE",
+      category: "WANTS",
+      funding: "SAVINGS",
+      amount: "70.00",
+      status: "active",
+    },
+    {
+      date: "2026-10-01",
+      kind: "EXPENSE",
+      category: "WANTS",
+      funding: "CASH",
+      amount: "25.00",
+      status: "active",
+    },
+    {
+      date: "2026-10-20",
+      kind: "SAVING",
+      category: "SAVINGS",
+      amount: "20.00",
+      status: "active",
+    },
+  ];
+  const a = budgetFor(d, "2026-10", "1"),
+    b = budgetFor(d, "2026-10", "2"),
+    month = budgetFor(d, "2026-10", "all");
+  assert.equal(a.savingsBefore, 25000);
+  assert.equal(a.savingsSpent, 7000);
+  assert.equal(a.savingsBalance, 18000);
+  assert.equal(a.actualCash, -2500);
+  assert.equal(a.categories[1].used, 2500);
+  assert.equal(b.savingsBefore, a.savingsBalance);
+  assert.equal(b.savingsBalance, 20000);
+  assert.equal(month.savingsBalance, b.savingsBalance);
+  assert.equal(a.actualCash + b.actualCash, month.actualCash);
+});
+test("Saldo previo de ahorro no inventa ingreso de caja ni consume el ahorro del mes", () => {
+  const d: any = data();
+  d.cash = [
+    {
+      date: "2026-10-01",
+      kind: "SAVINGS_OPENING",
+      category: "SAVINGS",
+      amount: "1000.00",
+      status: "active",
+    },
+  ];
+  const b = budgetFor(d, "2026-10", "all");
+  assert.equal(b.savingsBalance, 100000);
+  assert.equal(b.income, 0);
+  assert.equal(b.actualCash, 0);
+  assert.equal(b.categories[2].used, 0);
+});
+test("Personal y ahorro/deuda incluyen salidas reales, muestran sobregiro y mantienen BG voluntario", () => {
+  const d: any = data();
+  d.cash = [
+    {
+      date: "2026-10-02",
+      kind: "EXPENSE",
+      category: "WANTS",
+      amount: "500.00",
+      status: "active",
+    },
+    {
+      date: "2026-10-02",
+      kind: "SAVING",
+      category: "SAVINGS",
+      amount: "10.00",
+      status: "active",
+    },
+    {
+      date: "2026-10-02",
+      kind: "EXPENSE",
+      category: "SAVINGS",
+      amount: "5.00",
+      status: "active",
+    },
+  ];
+  d.rawMovements = [
+    { date: "2026-10-01", status: "active", type: "REGULAR", amount: "158.80" },
+    { date: "2026-10-01", status: "active", type: "CREDI", amount: "31.28" },
+  ];
+  const b = budgetFor(d, "2026-10", "1");
+  assert.equal(b.categories[1].remaining, 19664 - 50000);
+  assert.equal(b.categories[2].used, 1000 + 500 + 3128);
+  assert.equal(b.categories[2].remaining, 5791 - 4628);
+});
+test("Vigencia mensual, baja y vencimientos en febrero conservan los compromisos históricos", () => {
+  const d: any = data();
+  d.fixedExpenses = [
+    {
+      fixed_id: "internet",
+      effective_period: "2026-10",
+      name: "Internet",
+      amount: "30.00",
+      due_day: 31,
+      active: true,
+    },
+    {
+      fixed_id: "internet",
+      effective_period: "2027-01",
+      name: "Internet",
+      amount: "40.00",
+      due_day: 31,
+      active: true,
+    },
+    {
+      fixed_id: "internet",
+      effective_period: "2027-03",
+      name: "Internet",
+      amount: "40.00",
+      due_day: 31,
+      active: false,
+    },
+  ];
+  assert.equal(budgetFor(d, "2026-09", "all").fixed.length, 0);
+  assert.equal(budgetFor(d, "2026-10", "all").fixedPending, 3000);
+  assert.equal(budgetFor(d, "2027-02", "1").fixed.length, 0);
+  const b = budgetFor(d, "2027-02", "2");
+  assert.equal(b.fixed[0].dueDate, "2027-02-28");
+  assert.equal(b.fixedPending, 4000);
+  assert.equal(budgetFor(d, "2027-03", "all").fixed.length, 0);
+});
+test("Pago anticipado de fijo reserva por vencimiento y registra caja por fecha efectiva", () => {
+  const d: any = data();
+  d.fixedExpenses = [
+    {
+      fixed_id: "bill",
+      effective_period: "2026-10",
+      name: "Factura",
+      amount: "30.00",
+      due_day: 20,
+      active: true,
+    },
+  ];
+  d.cash = [
+    {
+      date: "2026-10-10",
+      period: "2026-10",
+      fixed_expense_id: "bill",
+      kind: "EXPENSE",
+      category: "NEEDS",
+      amount: "30.00",
+      status: "active",
+    },
+  ];
+  assert.equal(budgetFor(d, "2026-10", "1").spent, 3000);
+  assert.equal(budgetFor(d, "2026-10", "2").fixedPending, 0);
+  assert.equal(budgetFor(d, "2026-10", "all").categories[0].used, 3000);
+});

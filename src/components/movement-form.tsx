@@ -18,6 +18,7 @@ export default function MovementForm({
 }) {
   const [kind, setKind] = useState<Kind>(initialKind),
     [type, setType] = useState(edit?.record.type || "REGULAR"),
+    [cashKind, setCashKind] = useState(edit?.record.kind || "EXPENSE"),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [voiding, setVoiding] = useState(false),
@@ -113,8 +114,14 @@ export default function MovementForm({
         body = {
           ...body,
           kind: s("cashKind"),
-          category: s("category"),
+          category: ["SAVING", "SAVINGS_OPENING"].includes(s("cashKind"))
+            ? "SAVINGS"
+            : s("category"),
           concept: s("concept"),
+          funding:
+            s("cashKind") === "EXPENSE" ? s("funding") || "CASH" : "CASH",
+          fixedExpenseId:
+            s("cashKind") === "EXPENSE" ? r?.fixed_expense_id || null : null,
         };
       const statementBody = {
         period,
@@ -313,8 +320,18 @@ export default function MovementForm({
                 <div className="form-grid">
                   <label>
                     Tipo
-                    <select name="cashKind" defaultValue={r?.kind || "EXPENSE"}>
-                      {["PAYROLL", "INCOME", "EXPENSE", "SAVING"].map((k) => (
+                    <select
+                      name="cashKind"
+                      value={cashKind}
+                      onChange={(e) => setCashKind(e.target.value)}
+                    >
+                      {[
+                        "PAYROLL",
+                        "INCOME",
+                        "EXPENSE",
+                        "SAVING",
+                        "SAVINGS_OPENING",
+                      ].map((k) => (
                         <option key={k} value={k}>
                           {typeNames[k]}
                         </option>
@@ -325,7 +342,19 @@ export default function MovementForm({
                     Categoría
                     <select
                       name="category"
-                      defaultValue={r?.category || "NEEDS"}
+                      key={cashKind}
+                      disabled={["SAVING", "SAVINGS_OPENING"].includes(
+                        cashKind,
+                      )}
+                      defaultValue={
+                        ["SAVING", "SAVINGS_OPENING"].includes(cashKind)
+                          ? "SAVINGS"
+                          : r?.kind === cashKind
+                            ? r?.category || "NEEDS"
+                            : ["PAYROLL", "INCOME"].includes(cashKind)
+                              ? "OTHER"
+                              : "NEEDS"
+                      }
                     >
                       <option value="NEEDS">Necesidades</option>
                       <option value="WANTS">Gustos</option>
@@ -364,6 +393,24 @@ export default function MovementForm({
               )}
               {kind === "cash" ? (
                 <>
+                  {cashKind === "EXPENSE" && (
+                    <label>
+                      Origen para gastos
+                      <select
+                        name="funding"
+                        defaultValue={r?.funding || "CASH"}
+                      >
+                        <option value="CASH">Caja personal</option>
+                        <option value="SAVINGS">Ahorros acumulados</option>
+                      </select>
+                    </label>
+                  )}
+                  {r?.fixed_expense_id && (
+                    <p className="notice">
+                      Este pago está vinculado a un gasto fijo. Conserva «Gasto»
+                      y «Necesidades» para mantener el vínculo.
+                    </p>
+                  )}
                   <label>
                     Concepto
                     <input

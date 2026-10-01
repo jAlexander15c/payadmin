@@ -33,6 +33,8 @@ import type { Source, Forecast } from "@/lib/finance";
 import MovementForm from "./movement-form";
 import SettingsForm from "./settings-form";
 import CashCompensations from "./cash-compensations";
+import Expenses from "./expenses";
+import BudgetCategories from "./budget-categories";
 export type Snapshot = Awaited<ReturnType<typeof snapshot>>;
 export const names: Record<Source, string> = {
   chunky: "Chunky Bites",
@@ -92,6 +94,7 @@ export const typeNames: Record<string, string> = {
   INCOME: "Otro ingreso",
   EXPENSE: "Gasto",
   SAVING: "Ahorro líquido",
+  SAVINGS_OPENING: "Saldo previo de ahorro",
 };
 const nav = [
   { id: "overview", label: "Resumen", icon: LayoutDashboard },
@@ -99,6 +102,7 @@ const nav = [
   { id: "sources", label: "Responsabilidades", icon: Wallet },
   { id: "forecast", label: "Proyecciones", icon: ChartNoAxesCombined },
   { id: "budget", label: "Mi presupuesto", icon: Banknote },
+  { id: "expenses", label: "Mis gastos", icon: ReceiptText },
   { id: "controls", label: "Controles de cuadre", icon: ListChecks },
 ];
 export type Edit = {
@@ -266,16 +270,31 @@ export default function Dashboard({
               </p>
             </div>
             <div className="heading-actions">
-              <a className="button secondary export-main" href="/api/export">
+              <a
+                className="button secondary export-main"
+                href={
+                  page === "expenses"
+                    ? "/api/export?kind=budget"
+                    : "/api/export"
+                }
+              >
                 <Download size={16} />
                 Exportar
               </a>
               <button
                 className="button primary"
-                onClick={() => setForm("bank")}
+                onClick={() =>
+                  page === "expenses" ? go("budget") : setForm("bank")
+                }
               >
-                <Plus size={18} />
-                Registrar movimiento
+                {page === "expenses" ? (
+                  <ArrowUpRight size={18} />
+                ) : (
+                  <Plus size={18} />
+                )}
+                {page === "expenses"
+                  ? "Ver presupuesto"
+                  : "Registrar movimiento"}
               </button>
             </div>
           </div>
@@ -310,6 +329,16 @@ export default function Dashboard({
           )}
           {page === "forecast" && <Projections d={d} />}
           {page === "budget" && <Budget d={d} open={() => setForm("cash")} />}
+          {page === "expenses" && (
+            <Expenses
+              d={d}
+              onSaved={saved}
+              edit={(record) => {
+                setEdit({ kind: "cash", record });
+                setForm("cash");
+              }}
+            />
+          )}
           {page === "controls" && (
             <Controls d={d} open={() => setForm("statement")} />
           )}
@@ -1762,9 +1791,10 @@ function Budget({ d, open }: { d: Snapshot; open: () => void }) {
           <p className="notice">
             <Info size={17} />
             La caja real solo incorpora planilla neta registrada y aportes
-            recibidos, resta extras bancarios, gastos y ahorro. El descuento
-            regular de planilla no se resta otra vez. No incluye un saldo
-            inicial de efectivo desconocido.
+            recibidos, resta extras bancarios, gastos de caja y ahorro separado.
+            Los gastos desde ahorros acumulados solo reducen el saldo de ahorro.
+            El descuento regular de planilla no se resta otra vez. No incluye un
+            saldo inicial de efectivo desconocido.
           </p>
           <div className="detail-grid">
             <div>
@@ -1772,7 +1802,7 @@ function Budget({ d, open }: { d: Snapshot; open: () => void }) {
               <strong>{usd(income)}</strong>
             </div>
             <div>
-              <small>Gastos registrados</small>
+              <small>Gastos de caja registrados</small>
               <strong>{usd(spent)}</strong>
             </div>
             <div>
@@ -1827,6 +1857,7 @@ function Budget({ d, open }: { d: Snapshot; open: () => void }) {
           </div>
         </section>
       </div>
+      <BudgetCategories b={b} />
       <section className="panel section-gap">
         <div className="panel-heading">
           <h2>Aportes: esperado, recibido y pendiente</h2>

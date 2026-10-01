@@ -135,6 +135,7 @@ async function main() {
         "Responsabilidades",
         "Proyecciones",
         "Mi presupuesto",
+        "Mis gastos",
         "Controles de cuadre",
         "Historial y auditoría",
         "Configuración",

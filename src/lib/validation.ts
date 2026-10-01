@@ -62,12 +62,45 @@ export const cashInput = z
     requestKey: z.uuid(),
     date,
     period,
-    kind: z.enum(["PAYROLL", "INCOME", "EXPENSE", "SAVING"]),
+    kind: z.enum(["PAYROLL", "INCOME", "EXPENSE", "SAVING", "SAVINGS_OPENING"]),
     category: z.enum(["NEEDS", "WANTS", "DEBT", "SAVINGS", "OTHER"]),
     amount: positive,
     concept: z.string().trim().min(1).max(200),
+    funding: z.enum(["CASH", "SAVINGS"]).default("CASH"),
+    fixedExpenseId: z.uuid().nullable().default(null),
   })
-  .strict();
+  .strict()
+  .refine(
+    (v) => v.funding === "CASH" || v.kind === "EXPENSE",
+    "Solo un gasto puede pagarse desde ahorro.",
+  )
+  .refine(
+    (v) =>
+      !v.fixedExpenseId || (v.kind === "EXPENSE" && v.category === "NEEDS"),
+    "Un pago fijo pertenece a Necesidades.",
+  )
+  .refine(
+    (v) =>
+      !["SAVING", "SAVINGS_OPENING"].includes(v.kind) ||
+      v.category === "SAVINGS",
+    "Los movimientos de ahorro requieren la categoría Ahorro.",
+  );
+export const fixedExpenseInput = z
+  .object({
+    requestKey: z.uuid(),
+    id: z.uuid().optional(),
+    revision: z.number().int().positive().optional(),
+    effectivePeriod: period,
+    name: z.string().trim().min(1).max(200),
+    amount: positive,
+    dueDay: z.number().int().min(1).max(31),
+    active: z.boolean().default(true),
+  })
+  .strict()
+  .refine(
+    (v) => !v.id || v.revision !== undefined,
+    "Actualiza la configuración antes de editar.",
+  );
 export const statementInput = z
   .object({
     period,
