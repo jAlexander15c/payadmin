@@ -101,6 +101,24 @@ export const fixedExpenseInput = z
     (v) => !v.id || v.revision !== undefined,
     "Actualiza la configuración antes de editar.",
   );
+export const fundAdjustmentInput = z
+  .object({
+    requestKey: z.uuid(),
+    bucket: z.enum(["NEEDS", "WANTS", "SAVINGS"]),
+    operation: z.enum(["SET", "ADD", "REMOVE"]),
+    amount,
+    expectedBalance: z
+      .number()
+      .int()
+      .min(-Number.MAX_SAFE_INTEGER)
+      .max(Number.MAX_SAFE_INTEGER),
+    reason: z.string().trim().min(3).max(500),
+  })
+  .strict()
+  .refine(
+    (v) => v.operation === "SET" || Number(v.amount) > 0,
+    "El importe debe ser mayor que cero.",
+  );
 export const statementInput = z
   .object({
     period,

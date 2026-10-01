@@ -14,7 +14,9 @@ import {
   cashCompensationInput,
   cashCompensationCorrectionInput,
   fixedExpenseInput,
+  fundAdjustmentInput,
 } from "./validation";
+import { fundBalances } from "./funds";
 import { fixedExpensesAt } from "./budget";
 import {
   capital,
@@ -62,6 +64,7 @@ export async function readData(c: Queryable = database()) {
     schedule,
     cashCompensations,
     fixedExpenses,
+    fundAdjustments,
   ] = await (async () => [
     await c.query(
       "SELECT *,to_char(first_due,'YYYY-MM-DD') AS due FROM parameter_versions ORDER BY effective_period",
@@ -97,6 +100,9 @@ export async function readData(c: Queryable = database()) {
     ),
     await c.query(
       "SELECT v.*,f.revision FROM fixed_expense_versions v JOIN fixed_expenses f ON f.id=v.fixed_id ORDER BY v.effective_period,v.name",
+    ),
+    await c.query(
+      "SELECT *,to_char(occurred_on,'YYYY-MM-DD') AS date FROM fund_adjustments ORDER BY occurred_on DESC,created_at DESC,id",
     ),
   ])();
   if (
@@ -160,6 +166,7 @@ export async function readData(c: Queryable = database()) {
     scheduleVersions: schedule.rows,
     cashCompensations: cashCompensations.rows,
     fixedExpenses: fixedExpenses.rows,
+    fundAdjustments: fundAdjustments.rows,
   };
 }
 export async function confirmFirstDate(
@@ -419,6 +426,7 @@ export async function snapshot(asOf = panamaToday()) {
         linked,
       },
       database: "connected",
+      funds: fundBalances(data, asOf),
     };
   });
 }
@@ -466,6 +474,81 @@ async function validateFixedPayment(
       409,
       "Este gasto fijo no está activo en el mes del pago.",
     );
+}
+export async function adjustFund(
+  raw: unknown,
+  user: string,
+  today = panamaToday(),
+) {
+  const v = fundAdjustmentInput.parse(raw);
+  return locked(async (c) => {
+    const previous = await c.query(
+      "SELECT id FROM fund_adjustments WHERE request_key=$1",
+      [v.requestKey],
+    );
+    if (previous.rowCount) {
+      const same = await c.query(
+        "SELECT after_data=$2::jsonb AS equal FROM audit_log WHERE entity='fund' AND entity_id=$1 AND action='create' ORDER BY id LIMIT 1",
+        [previous.rows[0].id, JSON.stringify(v)],
+      );
+      if (!same.rows[0]?.equal)
+        throw new HttpError(
+          409,
+          "Este identificador ya se usó con datos distintos.",
+        );
+      return { id: previous.rows[0].id, duplicate: true };
+    }
+    const data = await readData(c),
+      before = fundBalances(data, today).find(
+        (r) => r.id === v.bucket,
+      )!.balance;
+    if (v.operation === "SET" && before !== v.expectedBalance)
+      throw new HttpError(
+        409,
+        "El saldo cambió. Actualiza los saldos antes de editar el total.",
+      );
+    const amount = cents(v.amount),
+      delta =
+        v.operation === "SET"
+          ? amount - before
+          : v.operation === "ADD"
+            ? amount
+            : -amount;
+    if (
+      !Number.isSafeInteger(before) ||
+      !Number.isSafeInteger(delta) ||
+      !Number.isSafeInteger(before + delta)
+    )
+      throw new HttpError(400, "El saldo supera el importe permitido.");
+    const id = randomUUID();
+    await c.query(
+      "INSERT INTO fund_adjustments(id,request_key,occurred_on,bucket,operation,amount,delta,before_balance,after_balance,reason,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+      [
+        id,
+        v.requestKey,
+        today,
+        v.bucket,
+        v.operation,
+        v.amount,
+        money(delta),
+        money(before),
+        money(before + delta),
+        v.reason,
+        user,
+      ],
+    );
+    await audit(
+      c,
+      user,
+      "fund",
+      id,
+      "create",
+      { bucket: v.bucket, balance: money(before) },
+      v,
+      v.reason,
+    );
+    return { id, duplicate: false, balance: before + delta };
+  });
 }
 export async function saveFixedExpense(raw: unknown, user: string) {
   const v = fixedExpenseInput.parse(raw);

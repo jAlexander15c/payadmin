@@ -20,6 +20,7 @@ type BudgetData = {
   rawMovements: Row[];
   participants: Row[];
   fixedExpenses?: Row[];
+  fundAdjustments?: Row[];
 };
 export function fixedExpensesAt(versions: Row[], period: string) {
   const latest = new Map<string, Row>();
@@ -47,40 +48,63 @@ export function budgetFor(
       (r) => r.status === "active" && inHalf(r),
     ),
     entries = d.cash.filter((r) => r.status === "active" && inHalf(r));
+  const adjustments = (d.fundAdjustments || []).filter(inHalf),
+    withdrawals = adjustments.filter((r) => r.operation === "REMOVE");
   const total = (rows: Row[]) => sum(rows.map((r) => cents(r.amount)));
   const income = total(
       entries.filter((r) => r.kind === "PAYROLL" || r.kind === "INCOME"),
     ),
     reimb = total(receipts),
-    spent = total(
-      entries.filter((r) => r.kind === "EXPENSE" && r.funding !== "SAVINGS"),
-    ),
+    spent =
+      total(
+        entries.filter((r) => r.kind === "EXPENSE" && r.funding !== "SAVINGS"),
+      ) + total(withdrawals.filter((r) => r.bucket !== "SAVINGS")),
     saving = total(entries.filter((r) => r.kind === "SAVING"));
-  const savingsSpent = total(
-    entries.filter((r) => r.kind === "EXPENSE" && r.funding === "SAVINGS"),
-  );
-  const savingsBefore = sum(
-    d.cash
-      .filter(
-        (r) =>
-          r.status === "active" &&
-          (r.date.slice(0, 7) < period ||
-            (r.date.slice(0, 7) === period &&
-              half === "2" &&
-              Number(r.date.slice(8)) <= 15)),
-      )
-      .map((r) =>
-        r.kind === "SAVING" || r.kind === "SAVINGS_OPENING"
-          ? cents(r.amount)
-          : r.kind === "EXPENSE" && r.funding === "SAVINGS"
-            ? -cents(r.amount)
-            : 0,
-      ),
-  );
+  const savingsSpent =
+    total(
+      entries.filter((r) => r.kind === "EXPENSE" && r.funding === "SAVINGS"),
+    ) + total(withdrawals.filter((r) => r.bucket === "SAVINGS"));
+  const savingsBefore =
+    sum(
+      d.cash
+        .filter(
+          (r) =>
+            r.status === "active" &&
+            (r.date.slice(0, 7) < period ||
+              (r.date.slice(0, 7) === period &&
+                half === "2" &&
+                Number(r.date.slice(8)) <= 15)),
+        )
+        .map((r) =>
+          r.kind === "SAVING" || r.kind === "SAVINGS_OPENING"
+            ? cents(r.amount)
+            : r.kind === "EXPENSE" && r.funding === "SAVINGS"
+              ? -cents(r.amount)
+              : 0,
+        ),
+    ) +
+    sum(
+      (d.fundAdjustments || [])
+        .filter(
+          (r) =>
+            r.bucket === "SAVINGS" &&
+            (r.date.slice(0, 7) < period ||
+              (r.date.slice(0, 7) === period &&
+                half === "2" &&
+                Number(r.date.slice(8)) <= 15)),
+        )
+        .map((r) => cents(r.delta)),
+    );
   const savingsOpening = total(
     entries.filter((r) => r.kind === "SAVINGS_OPENING"),
   );
-  const savingsBalance = savingsBefore + savingsOpening + saving - savingsSpent;
+  const savingsAdjustment = sum(
+    adjustments
+      .filter((r) => r.bucket === "SAVINGS" && r.operation !== "REMOVE")
+      .map((r) => cents(r.delta)),
+  );
+  const savingsBalance =
+    savingsBefore + savingsOpening + saving + savingsAdjustment - savingsSpent;
   const extras = total(
     d.rawMovements.filter(
       (r) =>
@@ -219,7 +243,8 @@ export function budgetFor(
                   ? ["SAVINGS", "DEBT"].includes(r.category)
                   : r.category === id)),
         ),
-      ) + (i === 2 ? extras : 0);
+      ) +
+      (i === 2 ? extras : total(withdrawals.filter((r) => r.bucket === id)));
     const reserved = i === 0 ? fixedPending : 0;
     return {
       id,
@@ -257,6 +282,7 @@ export function budgetFor(
     savingsSpent,
     savingsBefore,
     savingsOpening,
+    savingsAdjustment,
     savingsBalance,
     fixed,
     fixedPending,

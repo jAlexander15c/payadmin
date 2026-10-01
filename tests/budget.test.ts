@@ -313,3 +313,75 @@ test("Pago anticipado de fijo reserva por vencimiento y registra caja por fecha 
   assert.equal(budgetFor(d, "2026-10", "2").fixedPending, 0);
   assert.equal(budgetFor(d, "2026-10", "all").categories[0].used, 3000);
 });
+test("Totales editables: agregar/editar no duplica ingresos; retiros consumen su categoría una sola vez", () => {
+  const d: any = data();
+  d.cash = [
+    {
+      date: "2026-10-02",
+      status: "active",
+      kind: "SAVING",
+      category: "SAVINGS",
+      amount: "50.00",
+    },
+  ];
+  d.fundAdjustments = [
+    {
+      date: "2026-09-01",
+      bucket: "SAVINGS",
+      operation: "ADD",
+      amount: "40.00",
+      delta: "40.00",
+    },
+    {
+      date: "2026-10-01",
+      bucket: "NEEDS",
+      operation: "SET",
+      amount: "100.00",
+      delta: "100.00",
+    },
+    {
+      date: "2026-10-01",
+      bucket: "WANTS",
+      operation: "ADD",
+      amount: "80.00",
+      delta: "80.00",
+    },
+    {
+      date: "2026-10-02",
+      bucket: "NEEDS",
+      operation: "REMOVE",
+      amount: "20.00",
+      delta: "-20.00",
+    },
+    {
+      date: "2026-10-03",
+      bucket: "SAVINGS",
+      operation: "SET",
+      amount: "200.00",
+      delta: "110.00",
+    },
+    {
+      date: "2026-10-20",
+      bucket: "SAVINGS",
+      operation: "REMOVE",
+      amount: "30.00",
+      delta: "-30.00",
+    },
+  ];
+  const b = budgetFor(d, "2026-10", "all"),
+    a = budgetFor(d, "2026-10", "1"),
+    c = budgetFor(d, "2026-10", "2");
+  assert.equal(b.income, 0);
+  assert.equal(b.spent, 2000);
+  assert.equal(b.actualCash, -7000);
+  assert.equal(b.categories[0].used, 2000);
+  assert.equal(b.categories[1].used, 0);
+  assert.equal(b.categories[2].used, 5000);
+  assert.equal(b.savingsBefore, 4000);
+  assert.equal(b.savingsAdjustment, 11000);
+  assert.equal(b.savingsSpent, 3000);
+  assert.equal(b.savingsBalance, 17000);
+  assert.equal(a.savingsBalance, c.savingsBefore);
+  assert.equal(b.savingsBalance, c.savingsBalance);
+  assert.equal(a.actualCash + c.actualCash, b.actualCash);
+});

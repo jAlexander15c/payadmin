@@ -5,6 +5,7 @@ import { budgetFor, fixedExpensesAt } from "@/lib/budget";
 import { cents } from "@/lib/finance";
 import { type Snapshot, usd, displayDate, typeNames } from "./dashboard";
 import BudgetCategories from "./budget-categories";
+import FundTotals from "./fund-totals";
 type Row = Record<string, any>;
 type Form = { type: "fixed" | "expense" | "saving"; item?: Row };
 export default function Expenses({
@@ -74,6 +75,7 @@ export default function Expenses({
           Registrar gasto
         </button>
       </div>
+      <FundTotals d={d} onSaved={onSaved} />
       <BudgetCategories b={b} />
       <div className="expense-summary section-gap">
         <section className="panel">
@@ -92,7 +94,8 @@ export default function Expenses({
           <p className="fine-print">
             Saldo al cierre del período seleccionado: {usd(b.savingsBefore)}{" "}
             previo + {usd(b.savingsOpening)} saldo incorporado + {usd(b.saving)}{" "}
-            ahorrado − {usd(b.savingsSpent)} gastado.
+            ahorrado + {usd(b.savingsAdjustment)} ajustes −{" "}
+            {usd(b.savingsSpent)} gastado/retirado.
           </p>
           <button
             className="text-button"

@@ -12,6 +12,7 @@ import {
   confirmFirstDate,
   snapshot,
   saveFixedExpense,
+  adjustFund,
 } from "@/lib/store";
 import { period, simulationInput } from "@/lib/validation";
 import { budgetFor } from "@/lib/budget";
@@ -185,6 +186,31 @@ export async function GET(req: Request, ctx: Context) {
             ];
           }),
         ];
+      else if (kind === "funds")
+        rows = [
+          [
+            "ID",
+            "Fecha",
+            "Apartado",
+            "Operación",
+            "Importe USD",
+            "Cambio USD",
+            "Antes USD",
+            "Después USD",
+            "Motivo",
+          ],
+          ...data.fundAdjustments.map((r) => [
+            r.id,
+            r.date,
+            r.bucket,
+            r.operation,
+            r.amount,
+            r.delta,
+            r.before_balance,
+            r.after_balance,
+            r.reason,
+          ]),
+        ];
       else if (kind === "budget")
         rows = [
           [
@@ -211,6 +237,20 @@ export async function GET(req: Request, ctx: Context) {
             x.funding,
             x.fixed_expense_id,
           ]),
+          ...data.fundAdjustments
+            .filter((x) => x.operation === "REMOVE")
+            .map((x) => [
+              x.id,
+              x.date,
+              x.date.slice(0, 7),
+              "WITHDRAWAL",
+              x.bucket,
+              x.amount,
+              x.reason,
+              "active",
+              x.bucket === "SAVINGS" ? "SAVINGS" : "CASH",
+              "",
+            ]),
         ];
       else if (kind === "projection")
         rows = [
@@ -323,6 +363,8 @@ export async function POST(req: Request, ctx: Context) {
       return response(await saveParameters(raw, user.id));
     if (path.join("/") === "fixed-expense")
       return response(await saveFixedExpense(raw, user.id));
+    if (path.join("/") === "fund")
+      return response(await adjustFund(raw, user.id), 201);
     if (path.join("/") === "responsibilities")
       return response(await saveResponsibilities(raw, user.id));
     if (path.join("/") === "simulate") {

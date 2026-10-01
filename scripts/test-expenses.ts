@@ -24,13 +24,13 @@ async function main() {
   let fixedId = "";
   try {
     const clean = await database().query(
-      "SELECT (SELECT count(*) FROM cash_entries)+(SELECT count(*) FROM fixed_expenses) AS n",
+      "SELECT (SELECT count(*) FROM cash_entries)+(SELECT count(*) FROM fixed_expenses)+(SELECT count(*) FROM fund_adjustments) AS n",
     );
     if (Number(clean.rows[0].n) !== 0)
       throw new Error(
         "La prueba requiere una base _test sin movimientos ni gastos fijos.",
       );
-    for (const path of ["/api/cash", "/api/fixed-expense"]) {
+    for (const path of ["/api/cash", "/api/fixed-expense", "/api/fund"]) {
       assert.equal(
         (
           await fetch(base + path, {
@@ -235,6 +235,108 @@ async function main() {
     assert.equal(csv.status(), 200);
     assert.match(await csv.text(), /Origen de fondos/);
     assert.match(await csv.text(), /SAVINGS/);
+    for (const [bucket, target] of [
+      ["NEEDS", "200.00"],
+      ["WANTS", "80.00"],
+      ["SAVINGS", "100.00"],
+    ]) {
+      const card = page.locator(`[data-fund="${bucket}"]`);
+      for (const [name, value] of [
+        ["Editar total", target],
+        ["Agregar", "10.00"],
+        ["Sacar", "5.00"],
+      ]) {
+        await card.getByRole("button", { name, exact: true }).click();
+        await page
+          .getByLabel(
+            name === "Editar total" ? "Nuevo total (USD)" : "Importe (USD)",
+          )
+          .fill(value);
+        await page
+          .getByLabel("Concepto o motivo")
+          .fill(`${name} de ${bucket} en prueba`);
+        await save("Guardar cambio");
+      }
+    }
+    d = await snapshot();
+    assert.deepEqual(
+      d.funds.map((r: any) => r.balance),
+      [20500, 8500, 10500],
+    );
+    b = await budget();
+    assert.equal(b.actualCash, 37166);
+    assert.equal(b.savingsBalance, 10500);
+    assert.equal(b.categories[0].used, 7500);
+    assert.equal(b.categories[1].used, 3000);
+    const personal = page.locator('[data-fund="WANTS"]');
+    await personal
+      .getByRole("button", { name: "Editar total", exact: true })
+      .click();
+    await page.getByLabel("Nuevo total (USD)").fill("0");
+    await page
+      .getByLabel("Concepto o motivo")
+      .fill("Poner saldo en cero de prueba");
+    await save("Guardar cambio");
+    assert.equal((await snapshot()).funds[1].balance, 0);
+    await personal
+      .getByRole("button", { name: "Editar total", exact: true })
+      .click();
+    await page.getByLabel("Nuevo total (USD)").fill("85.00");
+    await page
+      .getByLabel("Concepto o motivo")
+      .fill("Restablecer total de prueba");
+    await save("Guardar cambio");
+    const fixed = page.locator('[data-fund="NEEDS"]');
+    await fixed
+      .getByRole("button", { name: "Editar total", exact: true })
+      .click();
+    const concurrent = await page.request.post(base + "/api/fund", {
+      headers: { Origin: base },
+      data: {
+        requestKey: randomUUID(),
+        bucket: "NEEDS",
+        operation: "ADD",
+        amount: "1.00",
+        expectedBalance: 20500,
+        reason: "Cambio concurrente de prueba",
+      },
+    });
+    assert.equal(concurrent.status(), 201);
+    await page.getByLabel("Nuevo total (USD)").fill("210.00");
+    await page
+      .getByLabel("Concepto o motivo")
+      .fill("Edición con vista antigua de prueba");
+    await page
+      .getByRole("button", { name: "Guardar cambio", exact: true })
+      .click();
+    await page
+      .getByRole("alert")
+      .filter({ hasText: "El saldo cambió" })
+      .waitFor();
+    await page
+      .getByRole("button", { name: "Actualizar saldos", exact: true })
+      .click();
+    await page.getByRole("dialog").waitFor({ state: "hidden" });
+    await fixed
+      .getByRole("button", { name: "Editar total", exact: true })
+      .click();
+    await page.getByLabel("Nuevo total (USD)").fill("210.00");
+    await page
+      .getByLabel("Concepto o motivo")
+      .fill("Edición con saldo actualizado de prueba");
+    await save("Guardar cambio");
+    await page.getByText(/Historial de cambios de totales/).click();
+    await page.getByRole("columnheader", { name: "Antes → después" }).waitFor();
+    const fundsCsv = await page.request.get(base + "/api/export?kind=funds");
+    assert.equal(fundsCsv.status(), 200);
+    assert.match(await fundsCsv.text(), /Antes USD/);
+    await page.reload();
+    await nav("Mis gastos");
+    assert.deepEqual(
+      (await snapshot()).funds.map((r: any) => r.balance),
+      [21000, 8500, 10500],
+    );
+    assert.equal((await budget()).actualCash, 37166);
     await mkdir(".local/prototype", { recursive: true });
     const overflow = async () =>
       assert.equal(
@@ -263,6 +365,19 @@ async function main() {
       fullPage: true,
     });
     await page
+      .locator(".fund-totals")
+      .screenshot({ path: ".local/prototype/totales-mobile.png" });
+    await page
+      .locator('[data-fund="WANTS"]')
+      .getByRole("button", { name: "Agregar", exact: true })
+      .click();
+    await page.getByLabel("Importe (USD)").fill("1.00");
+    await page
+      .getByLabel("Concepto o motivo")
+      .fill("Agregar desde móvil de prueba");
+    await save("Guardar cambio");
+    assert.equal((await snapshot()).funds[1].balance, 8600);
+    await page
       .getByRole("button", { name: "Registrar gasto", exact: true })
       .click();
     await overflow();
@@ -279,11 +394,14 @@ async function main() {
     await overflow();
     assert.deepEqual(errors, []);
     console.log(
-      "Gastos: configuración, pagos parciales, corrección/anulación, personal, ahorro acumulado, sobregiro visible, caja compartida, persistencia, temas y móvil: OK.",
+      "Gastos y totales: configuración, pagos parciales, corrección/anulación, agregar/sacar/editar, saldo cero, conflicto concurrente, historial, ahorro acumulado, presupuesto/caja, persistencia, temas y móvil: OK.",
     );
   } finally {
     await browser.close();
     await database().query("DELETE FROM audit_log WHERE user_id=$1", [user]);
+    await database().query("DELETE FROM fund_adjustments WHERE created_by=$1", [
+      user,
+    ]);
     await database().query("DELETE FROM cash_entries WHERE created_by=$1", [
       user,
     ]);

@@ -2543,6 +2543,29 @@ input:disabled {
 }
 
 /* Personal spending shares the budget and the cash ledger. */
+.fund-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fund-actions .button {
+  padding: 9px 11px;
+  font-size: 11px;
+}
+.fund-history {
+  margin-top: 22px;
+}
+.fund-history summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.fund-history > .text-button {
+  margin: 16px 0;
+}
+.fund-totals .expense-budget > strong {
+  font-size: 25px;
+}
 .expense-toolbar {
   display: flex;
   align-items: center;
