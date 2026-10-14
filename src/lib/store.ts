@@ -65,6 +65,8 @@ export async function readData(c: Queryable = database()) {
     cashCompensations,
     fixedExpenses,
     fundAdjustments,
+    payrollCycles,
+    payrollReceipts,
   ] = await (async () => [
     await c.query(
       "SELECT *,to_char(first_due,'YYYY-MM-DD') AS due FROM parameter_versions ORDER BY effective_period",
@@ -74,7 +76,7 @@ export async function readData(c: Queryable = database()) {
     ),
     await c.query("SELECT * FROM statements ORDER BY period"),
     await c.query(
-      "SELECT *,to_char(occurred_on,'YYYY-MM-DD') AS date FROM contributions ORDER BY occurred_on DESC,created_at DESC",
+      "SELECT r.*,to_char(r.occurred_on,'YYYY-MM-DD') AS date,p.id AS payroll_receipt_id FROM contributions r LEFT JOIN payroll_receipts p ON p.contribution_id=r.id AND p.status='active' ORDER BY r.occurred_on DESC,r.created_at DESC",
     ),
     await c.query(
       "SELECT l.* FROM contribution_links l JOIN bank_movements b ON b.id=l.movement_id WHERE b.status='active'",
@@ -104,6 +106,12 @@ export async function readData(c: Queryable = database()) {
     await c.query(
       "SELECT *,to_char(occurred_on,'YYYY-MM-DD') AS date FROM fund_adjustments ORDER BY occurred_on DESC,created_at DESC,id",
     ),
+    await c.query(
+      "SELECT *,to_char(received_on,'YYYY-MM-DD') AS date,to_char(next_due_on,'YYYY-MM-DD') AS next_due FROM payroll_cycles ORDER BY received_on DESC,created_at DESC",
+    ),
+    await c.query(
+      "SELECT *,to_char(received_on,'YYYY-MM-DD') AS date FROM payroll_receipts ORDER BY received_on DESC,created_at DESC",
+    ),
   ])();
   if (
     sources.rows.length !== 4 ||
@@ -129,6 +137,11 @@ export async function readData(c: Queryable = database()) {
     originalProvisional: v.provisional,
     salary: cents(v.salary),
     salaryIncludesLoan: v.salary_includes_loan,
+    nextDue: payrollCycles.rows.find((r) => r.status === "active")?.next_due,
+    scheduledDues: payrollCycles.rows
+      .filter((r) => r.status === "active")
+      .reverse()
+      .map((r) => r.next_due),
   }));
   const movements: Movement[] = m.rows
     .filter((v) => v.status === "active")
@@ -168,6 +181,8 @@ export async function readData(c: Queryable = database()) {
     cashCompensations: cashCompensations.rows,
     fixedExpenses: fixedExpenses.rows,
     fundAdjustments: fundAdjustments.rows,
+    payrollCycles: payrollCycles.rows,
+    payrollReceipts: payrollReceipts.rows,
   };
 }
 export async function confirmFirstDate(
@@ -248,6 +263,11 @@ export async function snapshot(asOf = panamaToday()) {
           .filter((x) => x.status === "active")
           .map((x) => cents(x.amount)),
       );
+    const distributed = sum(
+      data.payrollReceipts
+        .filter((r) => r.status === "active")
+        .map((r) => cents(r.amount)),
+    );
     const reg = sum(
       l.applications
         .filter((x) => x.type === "REGULAR")
@@ -385,9 +405,9 @@ export async function snapshot(asOf = panamaToday()) {
       control(
         15,
         "Aportes recibidos sin duplicar pagos",
-        received - linked,
-        linked <= received,
-        "Recibido pendiente de vincular. Registrar un aporte no reduce capital ni aumenta pagos BG.",
+        received - linked - distributed,
+        linked + distributed <= received,
+        "Recibido pendiente de vincular o distribuir. Los reembolsos de quincena ya repartidos no crean otro pago BG.",
       ),
       control(
         16,
@@ -434,7 +454,7 @@ export async function snapshot(asOf = panamaToday()) {
     };
   });
 }
-async function audit(
+export async function audit(
   c: PoolClient,
   user: string,
   entity: string,
@@ -655,6 +675,17 @@ function realDate(date: string, period: string, start: string, today: string) {
     throw new HttpError(400, "Un período futuro solo puede proyectarse.");
 }
 async function validateLinks(c: PoolClient) {
+  if (
+    (
+      await c.query(
+        "SELECT p.id FROM payroll_receipts p WHERE p.status='active' AND (EXISTS(SELECT 1 FROM contribution_links l JOIN bank_movements b ON b.id=l.movement_id WHERE l.contribution_id=p.contribution_id AND b.status='active') OR EXISTS(SELECT 1 FROM cash_compensations x WHERE x.contribution_id=p.contribution_id AND x.status='active'))",
+      )
+    ).rowCount
+  )
+    throw new HttpError(
+      409,
+      "Este reembolso de Chunky ya se distribuyó en Tu quincena. No puede aplicarse de nuevo al préstamo.",
+    );
   const invalid = await c.query(`SELECT r.id FROM contributions r LEFT JOIN (
  SELECT l.contribution_id,sum(l.amount) amount FROM contribution_links l JOIN bank_movements b ON b.id=l.movement_id WHERE b.status='active' GROUP BY l.contribution_id
  UNION ALL SELECT contribution_id,sum(amount) FROM cash_compensations WHERE status='active' GROUP BY contribution_id
@@ -679,7 +710,7 @@ async function validateLinks(c: PoolClient) {
       "No se puede aplicar un aporte antes de recibirlo o después de anularlo.",
     );
 }
-async function materialize(c: PoolClient, today: string) {
+export async function materialize(c: PoolClient, today: string) {
   await validateLinks(c);
   const d = await readData(c),
     l = replay(d.movements, d.statements, d.versions, today);
@@ -796,6 +827,20 @@ export async function createRecord(
           );
       }
       return { id: existing.rows[0].id, duplicate: true };
+    }
+    if (
+      (kind === "bank" && bankInput.parse(raw).type === "REGULAR") ||
+      (kind === "cash" && cashInput.parse(raw).kind === "PAYROLL")
+    ) {
+      const cycle = await c.query(
+        "SELECT 1 FROM payroll_cycles WHERE period=$1 AND half=$2 AND status='active'",
+        [parsed.period, Number(parsed.date.slice(8)) <= 15 ? 1 : 2],
+      );
+      if (cycle.rowCount)
+        throw new HttpError(
+          409,
+          "Esta quincena ya tiene salario y deducción registrados. Revísala en Mis gastos → Tu quincena.",
+        );
     }
     const start =
       kind === "bank"
@@ -1019,6 +1064,27 @@ export async function correctRecord(
       ),
       before = result.rows[0];
     if (!before) throw new HttpError(404, "Movimiento inexistente.");
+    if (
+      (kind === "cash" || kind === "expense") &&
+      (before.payroll_cycle_id || before.payroll_receipt_id)
+    )
+      throw new HttpError(
+        409,
+        "Este movimiento pertenece a Tu quincena. Anula el registro completo allí para conservar el reparto.",
+      );
+    if (
+      (kind === "bank" || kind === "cash" || kind === "contribution") &&
+      (
+        await c.query(
+          "SELECT id FROM payroll_cycles WHERE status='active' AND (bank_movement_id=$1 OR budget_cash_id=$1) UNION ALL SELECT id FROM payroll_receipts WHERE status='active' AND contribution_id=$1",
+          [id],
+        )
+      ).rowCount
+    )
+      throw new HttpError(
+        409,
+        "Este movimiento está vinculado a Tu quincena. Anúlalo desde ese apartado.",
+      );
     if (
       (kind === "cash" || kind === "expense") &&
       before.ledger !== (kind === "expense" ? "EXPENSES" : "BUDGET")

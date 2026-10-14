@@ -522,7 +522,10 @@ export default function MovementForm({
                       >
                         <option value="">Selecciona un aporte</option>
                         {d.contributions
-                          .filter((r) => r.status === "active")
+                          .filter(
+                            (r) =>
+                              r.status === "active" && !r.payroll_receipt_id,
+                          )
                           .map((r) => (
                             <option key={r.id} value={r.id}>
                               {r.contributor} · {r.date} ·{" "}

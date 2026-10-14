@@ -19,6 +19,11 @@ import { loanBudgetFor } from "@/lib/budget";
 import { expensesFor } from "@/lib/expenses";
 import { fundEffect, fundEffectNames } from "@/lib/funds";
 import { cents, money, simulate } from "@/lib/finance";
+import {
+  confirmPayroll,
+  receiveChunky,
+  voidPayrollRecord,
+} from "@/lib/payroll-store";
 import { registerInitialUser } from "@/lib/initial-registration";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -142,6 +147,7 @@ export async function GET(req: Request, ctx: Context) {
             "Persona",
             "Recibido USD",
             "Aplicado USD",
+            "Distribuido en Mis gastos USD",
             "Estado",
             "Notas",
           ],
@@ -162,6 +168,7 @@ export async function GET(req: Request, ctx: Context) {
                   )
                   .reduce((s, l) => s + cents(l.amount), 0),
             ),
+            x.payroll_receipt_id ? x.amount : "0.00",
             x.status,
             x.notes,
           ]),
@@ -349,6 +356,24 @@ export async function POST(req: Request, ctx: Context) {
       return response({ ok: true });
     }
     const user = await requireUser();
+    if (path.join("/") === "payroll")
+      return response(await confirmPayroll(raw, user.id), 201);
+    if (path.join("/") === "payroll-receipt")
+      return response(await receiveChunky(raw, user.id), 201);
+    if (
+      ["payroll", "payroll-receipt"].includes(path[0]) &&
+      path.length === 3 &&
+      path[2] === "void" &&
+      z.uuid().safeParse(path[1]).success
+    )
+      return response(
+        await voidPayrollRecord(
+          path[0] === "payroll" ? "payroll" : "payroll_receipt",
+          path[1],
+          raw,
+          user.id,
+        ),
+      );
     if (path[0] === "expense-entry") {
       if (path.length === 1)
         return response(await createRecord("expense", raw, user.id), 201);

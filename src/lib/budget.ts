@@ -144,7 +144,13 @@ export function budgetFor(
   );
   const start = d.versions[0].firstDue.slice(0, 7),
     active =
-      period >= start &&
+      (period >= start ||
+        d.rawMovements.some(
+          (r) =>
+            r.status === "active" &&
+            r.type === "REGULAR" &&
+            r.period === period,
+        )) &&
       (!d.current.closeDate || period <= d.current.closeDate.slice(0, 7));
   const row =
     d.real.periods.find((x) => x.period === period) ||

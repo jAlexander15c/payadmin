@@ -6,6 +6,7 @@ import { expensesFor, expenseBucketNames } from "@/lib/expenses";
 import { cents } from "@/lib/finance";
 import { type Snapshot, usd, displayDate } from "./dashboard";
 import FundTotals from "./fund-totals";
+import PayrollPanel from "./payroll-panel";
 import ExpenseCharts from "./expense-charts";
 type Row = Record<string, any>;
 type Form = { type: "fixed" | "expense" | "income"; item?: Row };
@@ -32,6 +33,7 @@ export default function Expenses({
   );
   return (
     <>
+      <PayrollPanel d={d} onSaved={onSaved} />
       <div className="expense-toolbar">
         <label className="inline-label">
           Mes
@@ -247,13 +249,22 @@ export default function Expenses({
                     <td>{usd(r.amount)}</td>
                     <td>{r.status === "active" ? "Registrado" : "Anulado"}</td>
                     <td>
-                      {r.status === "active" && r.source === "entry" && (
-                        <button
-                          className="text-button"
-                          onClick={() => edit(r.record)}
-                        >
-                          Corregir / anular
-                        </button>
+                      {r.status === "active" &&
+                        r.source === "entry" &&
+                        !r.record.payroll_cycle_id &&
+                        !r.record.payroll_receipt_id && (
+                          <button
+                            className="text-button"
+                            onClick={() => edit(r.record)}
+                          >
+                            Corregir / anular
+                          </button>
+                        )}
+                      {(r.record.payroll_cycle_id ||
+                        r.record.payroll_receipt_id) && (
+                        <a className="text-button" href="#tu-quincena">
+                          Ver quincena
+                        </a>
                       )}
                       {r.source === "fund" && (
                         <small>Registrado en Mis totales</small>

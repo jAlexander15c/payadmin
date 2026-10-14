@@ -2823,3 +2823,55 @@ input:disabled {
     font-size: 13px;
   }
 }
+
+.payroll-panel {
+  margin-bottom: 24px;
+}
+.payroll-cycles {
+  display: grid;
+  gap: 18px;
+  margin-top: 20px;
+}
+.payroll-cycle {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px;
+}
+.payroll-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin: 16px 0;
+}
+.payroll-summary strong,
+.payroll-receipt-line small {
+  display: block;
+  margin-top: 6px;
+}
+.payroll-receipt-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+}
+.payroll-allocation {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+  min-width: 0;
+}
+.payroll-allocation legend {
+  padding: 0 6px;
+  font-weight: 600;
+}
+@media (max-width: 650px) {
+  .payroll-summary {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .payroll-receipt-line {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

@@ -33,6 +33,8 @@ export type Parameters = {
   provisional: boolean;
   salary: number;
   salaryIncludesLoan: boolean;
+  nextDue?: string;
+  scheduledDues?: string[];
   originalFirstDue?: string;
   originalProvisional?: boolean;
 };
@@ -257,6 +259,12 @@ export function dueDate(firstDue: string, period: string) {
   );
   return `${period}-${String(day).padStart(2, "0")}`;
 }
+export function scheduledDue(p: Parameters, period: string) {
+  const anchor =
+    p.scheduledDues?.filter((date) => date.slice(0, 7) <= period).at(-1) ??
+    (p.nextDue && period >= p.nextDue.slice(0, 7) ? p.nextDue : p.firstDue);
+  return dueDate(anchor, period);
+}
 export function panamaToday() {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Panama",
@@ -322,7 +330,7 @@ export function accrue(
   ) as Record<Source, SourcePeriod>;
   const row: Period = {
     period,
-    date: dueDate(p.firstDue, period),
+    date: scheduledDue(p, period),
     opening,
     interest,
     feci,
@@ -528,9 +536,12 @@ export function replay(
 ): Ledger {
   const l = emptyLedger();
   l.asOf = asOf;
-  const start = versions[0].firstDue.slice(0, 7);
+  const start = movements.reduce(
+    (first, m) => (m.period < first ? m.period : first),
+    versions[0].firstDue.slice(0, 7),
+  );
   let end =
-    asOf >= dueDate(versions[0].firstDue, asOf.slice(0, 7))
+    asOf >= scheduledDue(paramsAt(versions, asOf.slice(0, 7)), asOf.slice(0, 7))
       ? asOf.slice(0, 7)
       : addMonths(asOf.slice(0, 7), -1);
   for (const m of movements) if (m.period > end) end = m.period;
@@ -655,7 +666,7 @@ function projectRaw(
   for (let i = 0; i < 240 && (capital(l) > 0 || pending(l) > 0); i++) {
     const period = addMonths(next, i),
       p = paramsAt(versions, period),
-      date = dueDate(first, period),
+      date = scheduledDue(p, period),
       ordinal = monthIndex(period) - monthIndex(start);
     if (!checkedChunky && date > "2031-06-02") {
       sections.chunky.remainingAtDeadline =
@@ -930,7 +941,7 @@ export function legalFuture(
     }
     schedule.push({
       period,
-      date: dueDate(first, period),
+      date: scheduledDue(p, period),
       opening,
       interest: ni,
       feci: nf,

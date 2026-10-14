@@ -892,6 +892,14 @@ function Movements({
               <tbody>
                 {filtered.map((r) => {
                   const app = d.real.applications.find((x) => x.id === r.id);
+                  const managedPayroll =
+                    r.payroll_receipt_id ||
+                    d.payrollCycles.some(
+                      (c) =>
+                        c.status === "active" &&
+                        (c.bank_movement_id === r.id ||
+                          c.budget_cash_id === r.id),
+                    );
                   const receivedApplied =
                     d.cashCompensations
                       .filter(
@@ -936,10 +944,12 @@ function Movements({
                         {tab === "bank"
                           ? usd(app?.principal || 0)
                           : tab === "contribution"
-                            ? usd(
-                                Math.round(Number(r.amount) * 100) -
-                                  receivedApplied,
-                              )
+                            ? r.payroll_receipt_id
+                              ? "Distribuido en Mis gastos"
+                              : usd(
+                                  Math.round(Number(r.amount) * 100) -
+                                    receivedApplied,
+                                )
                             : r.concept}
                       </td>
                       <td>
@@ -952,7 +962,10 @@ function Movements({
                         </span>
                       </td>
                       <td>
-                        {r.status === "active" && (
+                        {r.status === "active" && managedPayroll && (
+                          <small>Gestionar en Mis gastos → Tu quincena</small>
+                        )}
+                        {r.status === "active" && !managedPayroll && (
                           <button
                             className="text-button"
                             onClick={() => edit({ kind: tab, record: r })}
