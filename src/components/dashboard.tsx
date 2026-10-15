@@ -29,7 +29,7 @@ import {
   Search,
 } from "lucide-react";
 import type { snapshot } from "@/lib/store";
-import type { Source, Forecast } from "@/lib/finance";
+import { INITIAL, type Source, type Forecast } from "@/lib/finance";
 import MovementForm from "./movement-form";
 import SettingsForm from "./settings-form";
 import CashCompensations from "./cash-compensations";
@@ -47,12 +47,7 @@ const initials: Record<Source, string> = {
   cards: "JA",
   costs: "CO",
 };
-const initial: Record<Source, number> = {
-  chunky: 702434,
-  credi: 134900,
-  cards: 800308,
-  costs: 177358,
-};
+const initial = INITIAL;
 export const usd = (cents: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
     cents / 100,
@@ -1242,10 +1237,10 @@ function Sources({
       {s === "chunky" && (
         <div className="notice section-gap">
           <Info size={17} />
-          Préstamo anterior: app {usd(695649)}, consolidado {usd(702434)},
-          diferencia {usd(6785)} de concepto desconocido. El historial anterior
-          ({usd(151296)}) se consulta en Historial y no reduce este capital
-          nuevo.
+          Capital inicial de Chunky: {usd(initial.chunky)}. La diferencia de{" "}
+          {usd(6785)} respecto al importe consolidado se trasladó a Costos /
+          otros. El historial anterior ({usd(151296)}) se consulta en Historial
+          y no reduce este capital nuevo.
         </div>
       )}
       {(s === "cards" || s === "costs") && (
@@ -2090,8 +2085,8 @@ function HistoryView({ d }: { d: Snapshot }) {
             <strong>Descuento directo</strong>
           </div>
           <div>
-            <small>Diferencia app / cancelación</small>
-            <strong>$67.85 · Concepto desconocido</strong>
+            <small>Diferencia reclasificada</small>
+            <strong>$67.85 · Costos / otros</strong>
           </div>
         </div>
         <div className="table-scroll">

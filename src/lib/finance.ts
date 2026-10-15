@@ -3,10 +3,10 @@ Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 export const SOURCES = ["chunky", "credi", "cards", "costs"] as const;
 export type Source = (typeof SOURCES)[number];
 export const INITIAL: Record<Source, number> = {
-  chunky: 702434,
+  chunky: 695649,
   credi: 134900,
   cards: 800308,
-  costs: 177358,
+  costs: 184143,
 };
 export const LABELS: Record<Source, string> = {
   chunky: "Chunky Bites",

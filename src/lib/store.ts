@@ -289,15 +289,16 @@ export async function snapshot(asOf = panamaToday()) {
           data.composition
             .filter((x) => x.kind === "debt")
             .map((x) => cents(x.amount)),
-        ) === 1637642,
-        "Tres fuentes iniciales: $16,376.42.",
+        ) ===
+          INITIAL.chunky + INITIAL.credi + INITIAL.cards,
+        "Tres fuentes iniciales: $16,308.57. La diferencia de Chunky está en Costos / otros.",
       ),
       control(
         2,
         "Composición financiada",
         sum(Object.values(INITIAL)),
         sum(data.composition.map((x) => cents(x.amount))) === 1815000,
-        "Deudas + gastos + interés cotizado + efectivo. No hay pagos históricos en esta suma.",
+        "Deudas + gastos + interés cotizado + efectivo + diferencia reclasificada. No hay pagos históricos en esta suma.",
       ),
       control(
         3,

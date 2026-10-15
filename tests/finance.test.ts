@@ -33,9 +33,11 @@ function ledger(ms: Movement[]) {
   return replay(ms, [], [DEFAULT], date);
 }
 test("Los cuadres iniciales conservan los números definitivos", () => {
-  assert.equal(INITIAL.chunky + INITIAL.credi + INITIAL.cards, 1637642);
+  assert.equal(INITIAL.chunky + INITIAL.credi + INITIAL.cards, 1630857);
   assert.equal(sum(Object.values(INITIAL)), 1815000);
-  assert.equal(142885 + 31760 + 2713, 177358);
+  assert.equal(INITIAL.chunky, 695649);
+  assert.equal(INITIAL.costs, 184143);
+  assert.equal(142885 + 31760 + 2713 + 6785, INITIAL.costs);
   assert.equal(185531 + 362241 + 252536, 800308);
   assert.equal(112135 + 7849 + 150 + 1820 + 20931, 142885);
   assert.equal(17124 + 14636, 31760);
@@ -45,7 +47,10 @@ test("Los cuadres iniciales conservan los números definitivos", () => {
 });
 test("El reparto conserva cada centavo, incluso en asignaciones pequeñas", () => {
   for (let amount = 0; amount < 1000; amount++) {
-    const r = split(amount, [702434, 134900, 800308, 177358]);
+    const r = split(
+      amount,
+      SOURCES.map((s) => INITIAL[s]),
+    );
     assert.equal(sum(r), amount);
     assert.ok(r.every((x) => Number.isInteger(x) && x >= 0));
   }
@@ -88,7 +93,10 @@ test("CrediJamar: referencia aislada, 24 meses y último importe", () => {
   assert.equal(f.sections.credi.closeDate, "2028-09-15");
   assert.equal(f.sections.credi.remainingAtDeadline, 0);
   assert.equal(f.schedule.filter((x) => x.credi > 0).length, 24);
-  assert.ok(Math.abs(f.schedule[23].credi - 6259) <= 5);
+  // Attributed monthly charges round across the four corrected sources.
+  // The isolated reference above stays $62.59; the internal last quota is $62.53.
+  assert.equal(f.schedule[23].credi, 6253);
+  assert.equal(f.schedule[23].sources!.credi.closing, 0);
   const bad: Parameters = { ...DEFAULT, credi: 1000 };
   const fail = forecast(emptyLedger(), [bad]);
   assert.ok(fail.sections.credi.remainingAtDeadline > 0);

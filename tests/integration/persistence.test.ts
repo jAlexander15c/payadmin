@@ -69,7 +69,13 @@ test("Persistencia PostgreSQL, idempotencia, auditoría y recálculo", async (t)
       assert.equal(d.totals.capital, 1815000);
       assert.equal(d.real.paid, 0);
       assert.equal(d.history.length, 11);
-      assert.equal(d.composition.length, 12);
+      assert.equal(d.composition.length, 13);
+      assert.equal(d.real.bags.chunky.capital, 695649);
+      assert.equal(d.real.bags.costs.capital, 184143);
+      assert.equal(
+        d.composition.find((x) => x.id === "chunky_difference")?.amount,
+        "67.85",
+      );
       const r = await database().query(
         "SELECT data_type FROM information_schema.columns WHERE table_name='bank_movements' AND column_name='amount'",
       );
